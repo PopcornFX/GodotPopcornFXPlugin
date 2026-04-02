@@ -1,0 +1,40 @@
+# SConstruct
+*.dblite
+__pycache__
+*.pyc
+
+# Visual Studio Cache
+.vs/
+
+# Visual Studio Files
+*.sln
+*.vcxproj*
+
+# VSCode Cache
+.vscode/
+
+# Binaries
+.DS_Store
+*.obj
+*.iobj
+*.o
+*.pdb
+*.ipdb
+*.ilk
+*.exe
+*.264
+*.exp
+*.lib
+*.a
+*.vcxproj.user
+*.os
+*.out
+
+*.so
+*.dll
+*.dylib
+
+# Folders
+x64/
+obj/
+thirdparty/

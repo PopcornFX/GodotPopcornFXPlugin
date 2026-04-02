@@ -1,0 +1,36 @@
+## Text files with forced LF
+*.c      text eol=lf
+*.cpp    text eol=lf
+*.h      text eol=lf
+*.inl    text eol=lf
+*.s      text eol=lf
+*.asm    text eol=lf
+
+.gitattributes      text eol=lf
+.gitignore          text eol=lf
+..gitmodules        text eol=lf
+SConstruct          text eol=lf
+*.sh                text eol=lf
+*.py                text eol=lf
+*.rb                text eol=lf
+*.md                text eol=lf
+*.make              text eol=lf
+
+# Shader files
+*.glsl              text eol=lf
+*.vert              text eol=lf
+*.frag              text eol=lf
+*.geom              text eol=lf
+
+## Text files with forced CRLF
+*.cs        text eol=crlf
+*.bat       text eol=crlf
+*.sln       text eol=crlf
+*.vcxproj   text eol=crlf
+*.vcxproj.* text eol=crlf
+
+## Git LFS
+*.dylib     filter=lfs diff=lfs merge=lfs -text
+*.dll       filter=lfs diff=lfs merge=lfs -text
+*.so        filter=lfs diff=lfs merge=lfs -text
+*.svg       filter=lfs diff=lfs merge=lfs -text
