@@ -1,0 +1,156 @@
+//----------------------------------------------------------------------------
+// Copyright Persistant Studios, SARL.
+// https://popcornfx.com/popcornfx-community-license/
+//----------------------------------------------------------------------------
+#include "pk_string_names.h"
+
+#include "godot_cpp/core/error_macros.hpp"
+
+namespace godot {
+
+PKStringNames *PKStringNames::singleton;
+
+const PKStringNames *PKStringNames::get_singleton() {
+	DEV_ASSERT(singleton != nullptr);
+	return singleton;
+}
+
+void PKStringNames::create_singleton() {
+	DEV_ASSERT(singleton == nullptr);
+	singleton = memnew(PKStringNames);
+}
+
+void PKStringNames::destroy_singleton() {
+	DEV_ASSERT(singleton != nullptr);
+	memdelete(singleton);
+	singleton = nullptr;
+}
+
+PKStringNames::PKStringNames() {
+	// CoreStringNames
+	changed = StringName("changed");
+	frame_post_draw = StringName("frame_post_draw");
+}
+
+String NotificationNames::get_notification_name(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_POSTINITIALIZE:
+			return "NOTIFICATION_POSTINITIALIZE";
+		case NOTIFICATION_PREDELETE:
+			return "NOTIFICATION_PREDELETE";
+		case NOTIFICATION_ENTER_TREE:
+			return "NOTIFICATION_ENTER_TREE";
+		case NOTIFICATION_EXIT_TREE:
+			return "NOTIFICATION_EXIT_TREE";
+		case NOTIFICATION_READY:
+			return "NOTIFICATION_READY";
+		case NOTIFICATION_PARENTED:
+			return "NOTIFICATION_PARENTED";
+		case NOTIFICATION_UNPARENTED:
+			return "NOTIFICATION_UNPARENTED";
+		case NOTIFICATION_PAUSED:
+			return "NOTIFICATION_PAUSED";
+		case NOTIFICATION_UNPAUSED:
+			return "NOTIFICATION_UNPAUSED";
+		case NOTIFICATION_PHYSICS_PROCESS:
+			return "NOTIFICATION_PHYSICS_PROCESS";
+		case NOTIFICATION_PROCESS:
+			return "NOTIFICATION_PROCESS";
+		case NOTIFICATION_INTERNAL_PROCESS:
+			return "NOTIFICATION_INTERNAL_PROCESS";
+		case NOTIFICATION_INTERNAL_PHYSICS_PROCESS:
+			return "NOTIFICATION_INTERNAL_PHYSICS_PROCESS";
+		case NOTIFICATION_POST_ENTER_TREE:
+			return "NOTIFICATION_POST_ENTER_TREE";
+		case NOTIFICATION_DRAG_BEGIN:
+			return "NOTIFICATION_DRAG_BEGIN";
+		case NOTIFICATION_DRAG_END:
+			return "NOTIFICATION_DRAG_END";
+		case NOTIFICATION_PATH_RENAMED:
+			return "NOTIFICATION_PATH_RENAMED";
+		case NOTIFICATION_TRANSLATION_CHANGED:
+			return "NOTIFICATION_TRANSLATION_CHANGED";
+		case NOTIFICATION_EDITOR_PRE_SAVE:
+			return "NOTIFICATION_EDITOR_PRE_SAVE";
+		case NOTIFICATION_MOVED_IN_PARENT:
+			return "NOTIFICATION_MOVED_IN_PARENT";
+		case NOTIFICATION_ENABLED:
+			return "NOTIFICATION_ENABLED";
+		case NOTIFICATION_DISABLED:
+			return "NOTIFICATION_DISABLED";
+		case NOTIFICATION_SCENE_INSTANTIATED:
+			return "NOTIFICATION_SCENE_INSTANTIATED";
+		case NOTIFICATION_WM_MOUSE_ENTER:
+			return "NOTIFICATION_WM_MOUSE_ENTER";
+		case NOTIFICATION_WM_MOUSE_EXIT:
+			return "NOTIFICATION_WM_MOUSE_EXIT";
+		case NOTIFICATION_WM_WINDOW_FOCUS_IN:
+			return "NOTIFICATION_WM_WINDOW_FOCUS_IN";
+		case NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+			return "NOTIFICATION_WM_WINDOW_FOCUS_OUT";
+		case NOTIFICATION_WM_CLOSE_REQUEST:
+			return "NOTIFICATION_WM_CLOSE_REQUEST";
+		case NOTIFICATION_WM_GO_BACK_REQUEST:
+			return "NOTIFICATION_WM_GO_BACK_REQUEST";
+		case NOTIFICATION_WM_SIZE_CHANGED:
+			return "NOTIFICATION_WM_SIZE_CHANGED";
+		case NOTIFICATION_WM_DPI_CHANGE:
+			return "NOTIFICATION_WM_DPI_CHANGE";
+		case NOTIFICATION_VP_MOUSE_ENTER:
+			return "NOTIFICATION_VP_MOUSE_ENTER";
+		case NOTIFICATION_VP_MOUSE_EXIT:
+			return "NOTIFICATION_VP_MOUSE_EXIT";
+		case NOTIFICATION_OS_MEMORY_WARNING:
+			return "NOTIFICATION_OS_MEMORY_WARNING";
+		case NOTIFICATION_WM_ABOUT:
+			return "NOTIFICATION_WM_ABOUT";
+		case NOTIFICATION_CRASH:
+			return "NOTIFICATION_CRASH";
+		case NOTIFICATION_OS_IME_UPDATE:
+			return "NOTIFICATION_OS_IME_UPDATE";
+		case NOTIFICATION_APPLICATION_RESUMED:
+			return "NOTIFICATION_APPLICATION_RESUMED";
+		case NOTIFICATION_APPLICATION_PAUSED:
+			return "NOTIFICATION_APPLICATION_PAUSED";
+		case NOTIFICATION_APPLICATION_FOCUS_IN:
+			return "NOTIFICATION_APPLICATION_FOCUS_IN";
+		case NOTIFICATION_APPLICATION_FOCUS_OUT:
+			return "NOTIFICATION_APPLICATION_FOCUS_OUT";
+		case NOTIFICATION_TEXT_SERVER_CHANGED:
+			return "NOTIFICATION_TEXT_SERVER_CHANGED";
+		case NOTIFICATION_EDITOR_POST_SAVE:
+			return "NOTIFICATION_EDITOR_POST_SAVE";
+		case 3:
+			return "NOTIFICATION_PREDELETE_CLEANUP";
+		case 30:
+			return "NOTIFICATION_DRAW";
+		case 31:
+			return "NOTIFICATION_VISIBILITY_CHANGED";
+		case 32:
+			return "NOTIFICATION_ENTER_CANVAS";
+		case 33:
+			return "NOTIFICATION_EXIT_CANVAS";
+		case 35:
+			return "NOTIFICATION_LOCAL_TRANSFORM_CHANGED";
+		case 36:
+			return "NOTIFICATION_WORLD_2D_CHANGED";
+		case 41:
+			return "NOTIFICATION_ENTER_WORLD";
+		case 42:
+			return "NOTIFICATION_EXIT_WORLD";
+		case 43:
+			return "NOTIFICATION_VISIBILITY_CHANGED";
+		case 44:
+			return "NOTIFICATION_LOCAL_TRANSFORM_CHANGED";
+		case 50:
+			return "NOTIFICATION_BECAME_CURRENT";
+		case 51:
+			return "NOTIFICATION_LOST_CURRENT";
+		case 10000:
+			return "NOTIFICATION_EDITOR_SETTINGS_CHANGED";
+		default:
+			return "Unknown Notification " + String::num_int64(p_what);
+	}
+}
+
+} // namespace godot

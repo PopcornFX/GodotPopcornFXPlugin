@@ -1,0 +1,40 @@
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  release-on-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set ENV
+        run: |
+          echo "SHORT=${GITHUB_REF_NAME%.*}" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Download plugin zip
+        run: |
+          ZIP_URL="https://downloads.popcornfx.com/Plugins/Godot/Godot_PopcornFXExtension_v${{ env.VERSION }}_Win64_Linux64_Mac64_Android64_iOS64.zip"
+          echo "Downloading $ZIP_URL"
+          curl -L -o plugin_full.zip "$ZIP_URL"
+
+      - name: Extract addons folder and repack
+        run: |
+          unzip plugin_full.zip -d plugin_extracted
+          cd plugin_extracted
+          cp LICENSE.md addons/popcornfx/LICENSE.md
+          zip -r ../addon.zip addons/
+
+      - uses: ncipollo/release-action@v1
+        with:
+          draft: false
+          name: "Godot Plugin: ${{ github.ref_name }}"
+          artifacts: "addon.zip"
+          body: "PopcornFX Plugin ${{ github.ref_name }} for Godot\n\n
+                You can download the PopcornFX Editor and find the full changelog here:\n
+                https://wiki.popcornfx.com/index.php?title=PK-Editor_${{ env.SHORT }}#Changelog_${{ env.VERSION }}"
