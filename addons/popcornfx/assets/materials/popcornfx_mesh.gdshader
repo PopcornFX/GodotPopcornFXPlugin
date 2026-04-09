@@ -85,7 +85,11 @@ void fragment() {
 	// Apply computed albedo and alpha values
 	ALBEDO = albedo.rgb;
 #if defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ALPHA)
-	ALPHA = albedo.a;
+	#if defined(PK_HAS_EMISSIVE) && !defined(PK_HAS_DIFFUSE)
+		ALPHA = 1.0;
+	#else
+		ALPHA = albedo.a;
+	#endif
 #elif defined(PK_BLEND_PREMUL_ALPHA)
 	PREMUL_ALPHA_FACTOR = albedo.a;
 #elif defined(PK_BLEND_MASKED)
