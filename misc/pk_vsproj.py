@@ -63,7 +63,7 @@ def add_to_vs_project(env, sources):
 
 
 # /!\ Modified ! (from godot/method.py)
-def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
+def generate_vs_project(sources, env, num_jobs, build_dir, project_name="godot-popcornfx"):
     batch_file = find_visual_c_batch_file(env)
 
     if batch_file:
@@ -72,8 +72,8 @@ def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
             # This version information (Win32, x64, Debug, Release) seems to be
             # required for Visual Studio to understand that it needs to generate an NMAKE
             # project. Do not modify without knowing what you are doing.
-            PLATFORMS = ["Win32", "x64"]
-            PLATFORM_IDS = ["x86_32", "x86_64"]
+            PLATFORMS = ["x64"]
+            PLATFORM_IDS = ["x86_64"]
             CONFIGURATIONS = ["editor", "template_release", "template_debug"]
             DEV_SUFFIX = ".dev" if env["dev_build"] else ""
     
@@ -110,14 +110,12 @@ def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
                     for platform in ModuleConfigs.PLATFORMS
                 ]
                 self.arg_dict["variant"] += variants
-                if env["godot_bin_path"]:
+                if env["godot_path"]:
                     self.arg_dict["runfile"] += [
-                        f'{Path(env["godot_bin_path"])}\\godot.windows.{config}{ModuleConfigs.DEV_SUFFIX}{".double" if env["precision"] == "double" else ""}.{plat_id}{f".{name}" if name else ""}.exe'
+                        f'{Path(env["godot_path"]).resolve()}\\bin\\godot.windows.{config}{ModuleConfigs.DEV_SUFFIX}{".double" if env["precision"] == "double" else ""}.{plat_id}{f".{name}" if name else ""}.exe'
                         for config in ModuleConfigs.CONFIGURATIONS
                         for plat_id in ModuleConfigs.PLATFORM_IDS
                     ]
-                elif env["godot_exe_path"]:
-                    self.arg_dict["runfile"] += ModuleConfigs.for_every_variant(str(Path(env["godot_exe_path"])))
                 else:
                     self.arg_dict["runfile"] += [""] * len(variants)
                 self.arg_dict["cpppaths"] += ModuleConfigs.for_every_variant(env["CPPPATH"] + [includes])
@@ -143,12 +141,15 @@ def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
                 # in a backslash, so we need to remove this, lest it escape the
                 # last double quote off, confusing MSBuild
                 common_build_postfix = [
-                    "--directory=\"$(ProjectDir.TrimEnd('\\'))\"",
+                    "--directory=\"$(ProjectDir.TrimEnd('\\'))\\..\"",
                     "platform=windows",
                     f"target={configuration_getter}",
                 #    "progress=no",
                     "-j%s" % num_jobs,
                 ]
+                if env["api_version"]:
+                    common_build_postfix.append("api_version=" + env["api_version"])
+
                 if env["debug_symbols"]:
                     common_build_postfix.append("debug_symbols=yes")
 
@@ -204,16 +205,14 @@ def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
             )
     
         env["MSVSBUILDCOM"] = module_configs.build_commandline("scons")
-        if env["godot_bin_path"]:
-            env["MSVSREBUILDCOM"] = module_configs.build_commandline(f'scons vsproj=yes godot_vsproj_path="{Path(env["godot_vsproj_path"])}" godot_bin_path="{Path(env["godot_bin_path"])}"')
-        elif env["godot_exe_path"]:
-            env["MSVSREBUILDCOM"] = module_configs.build_commandline(f'scons vsproj=yes godot_vsproj_path="{Path(env["godot_vsproj_path"])}" godot_exe_path="{Path(env["godot_exe_path"])}"')
+        if env["godot_path"]:
+            env["MSVSREBUILDCOM"] = module_configs.build_commandline(f'scons vsproj=yes godot_path="{Path(env["godot_path"])}"')
         env["MSVSCLEANCOM"] = module_configs.build_commandline("scons --clean")
         if not env.get("MSVS"):
             env["MSVS"]["PROJECTSUFFIX"] = ".vcxproj"
             env["MSVS"]["SOLUTIONSUFFIX"] = ".sln"
         proj = env.MSVSProject(
-            target=["#" + project_name + env["MSVSPROJECTSUFFIX"]],
+            target=["#" + build_dir + project_name + env["MSVSPROJECTSUFFIX"]],
             incs=env.vs_incs,
             srcs=env.vs_srcs,
             misc=['.clang-format'],
@@ -222,16 +221,17 @@ def generate_vs_project(sources, env, num_jobs, project_name="godot-popcornfx"):
         )
         env.Default(proj)
 
-        projects = [project_name + env["MSVS"]["PROJECTSUFFIX"]]
+        projects = [build_dir + project_name + env["MSVS"]["PROJECTSUFFIX"]]
 
-        if env["godot_vsproj_path"]:
-            if os.path.isfile(env["godot_vsproj_path"]):
-                projects.append(env["godot_vsproj_path"])
+        if env["godot_path"]:
+            vsproj = str(Path(env["godot_path"]) / "godot.vcxproj")
+            if os.path.isfile(vsproj):
+                projects.append(vsproj)
             else:
-                print("WARNING: godot_vsproj_path supplied but " + env["godot_vsproj_path"] + " doesn't exists. Skipping.'")
+                print("WARNING: godot_path supplied but " + vsproj + " doesn't exists. Skipping.'")
         
         solution = env.MSVSSolution(
-            target = "#" + project_name + env['MSVSSOLUTIONSUFFIX'],
+            target = "#" + build_dir + project_name + env['MSVSSOLUTIONSUFFIX'],
             projects = projects,
             variant = module_configs.arg_dict["variant"]
         )

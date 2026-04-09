@@ -3,7 +3,7 @@
 > /!\ **Alpha version** — Expect bugs and missing or broken features. Use at your own risk and feel free to report any issues you encounter.
 
 Integrates the **PopcornFX Runtime SDK** into **Godot** as a GDExtension.
-* **Version:** `2.24.0`
+* **Version:** `2.24.1`
 * **Godot:** `4.5` and `4.6`
 * **Godot-cpp:** `10.0.0-rc1`
 * **Supported platforms:** `Windows`, `MacOS`, `Linux`, `iOS`, `Android`
@@ -12,7 +12,7 @@ Integrates the **PopcornFX Runtime SDK** into **Godot** as a GDExtension.
 
 ### Installing from downloaded archive
 
-Simply download `addon.zip` found in the [releases](https://github.com/PopcornFX/GodotPopcornFXPlugin/releases) tab and uncompress it in your project's directory.
+Simply download `addon.zip` found in the [releases](https://github.com/PopcornFX/GodotPopcornFXPlugin/releases) tab, extract it, and copy the `addons/` folder into your project's root directory.
 
 ### Installing from GitHub source repository
 

@@ -7,7 +7,7 @@ from misc.pk_vsproj import generate_vs_project
 from misc.pk_platform_methods import create_macos_universal_libs, PlatformPaths
 from misc.pk_platform_methods import combine_ios_libs, create_ios_xcframework
 
-POPCORNFX_VERSION = "2.24.0"
+POPCORNFX_VERSION = "2.24.1"
 POPCORNFX_LICENSE = "Godot"
 
 def link_popcornfx(bin_dir):
@@ -227,9 +227,7 @@ def link_popcornfx(bin_dir):
 _custom_opts = [
     BoolVariable("popcornfx_dev", "Use PopcornFX dev libraries", False),
     BoolVariable("vsproj", "Generate a Visual Studio solution", False),
-    ("godot_vsproj_path", "Path to the Godot vsproj", ""),
-    ("godot_bin_path", "Path to the Godot bin directory", ""),
-    ("godot_exe_path", "Path to the Godot executable", ""),
+    ("godot_path", "Path to the Godot repository", ""),
 ]
 
 _custom_keys = [opt[0] for opt in _custom_opts]
@@ -274,7 +272,12 @@ for root, subdirs, files in os.walk(src_dir):
 #----------------------------------------------------------------------------
 
 # Store all obj files in a dedicated folder
-env["SHOBJPREFIX"] = "#obj/"
+build_dir = "build_{}/".format(env["platform"])
+os.makedirs(build_dir, exist_ok=True)
+env["SHOBJPREFIX"] = "#{}obj/".format(build_dir)
+
+if env.get("is_msvc", False):
+    env.Append(CCFLAGS=['/Fd' + build_dir])
 
 #----------------------------------------------------------------------------
 
@@ -368,10 +371,10 @@ if env["vsproj"]:
     env.vs_incs = []
     env.vs_srcs = []
 
-    vcxproj_user_file = "godot-popcornfx.vcxproj.user"
+    vcxproj_user_file = build_dir + "godot-popcornfx.vcxproj.user"
     if with_demo and not os.path.isfile(vcxproj_user_file):
         demo_path = os.path.abspath("demo")
-        shutil.copy2("patches/godot-popcornfx.patchvcxprojuser", vcxproj_user_file)
+        shutil.copy2("misc/godot-popcornfx.patch.vcxprojuser", vcxproj_user_file)
         # Read in the file
         with open(vcxproj_user_file, 'r') as file:
             filedata = file.read()
@@ -381,6 +384,6 @@ if env["vsproj"]:
         with open(vcxproj_user_file, 'w') as file:
             file.write(filedata)
 
-    generate_vs_project(sources, env, GetOption("num_jobs"))
+    generate_vs_project(sources, env, GetOption("num_jobs"), build_dir)
 
 #----------------------------------------------------------------------------
