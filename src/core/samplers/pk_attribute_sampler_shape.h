@@ -60,7 +60,8 @@ protected:
 	virtual void _physics_process() override;
 	virtual void _ready() override;
 	void _update_node();
-	void _setup_mesh_runtime_structs(CShapeDescriptor_Mesh *desc);
+	void _set_node(MeshInstance3D *p_new_node);
+	void _setup_mesh_runtime_structs(CShapeDescriptor_Mesh *p_desc);
 	void _clear_mesh_runtime_structs();
 
 	bool ready = false;

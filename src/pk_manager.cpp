@@ -388,6 +388,7 @@ void PKManager::_add_setting_ifn(Variant::Type p_type, const String &p_name, Pro
 
 void PKManager::_update_settings() {
 #if TOOLS_ENABLED
+	_add_setting_ifn(Variant::INT, "popcornfx/runtime/default_emitter_transform_mode", PROPERTY_HINT_ENUM, "Global,Local", 0, true, false);
 	_add_setting_ifn(Variant::STRING, "popcornfx/editor/source_pack", PROPERTY_HINT_FILE, "*.pkproj", "res://", true, false);
 	_add_setting_ifn(Variant::BOOL, "popcornfx/editor/debug_baked_effects", PROPERTY_HINT_NONE, "", false, true, false);
 	_add_setting_ifn(Variant::BOOL, "popcornfx/export/raw_export_dependencies", PROPERTY_HINT_NONE, "", true, false, false);
@@ -404,6 +405,8 @@ void PKManager::_update_settings() {
 	pkfx_settings.source_pack_root = settings->get_setting("popcornfx/internal/source_pack_root");
 
 	pkfx_plugin->set_project_settings(pkfx_settings);
+
+	PKEmitter3D::default_transform_mode = PKEmitter3D::TransformMode(int(settings->get_setting("popcornfx/runtime/default_emitter_transform_mode")) + 1);
 
 	// Set this hidden setting so that in a packaged build we know where the effects are
 #if TOOLS_ENABLED

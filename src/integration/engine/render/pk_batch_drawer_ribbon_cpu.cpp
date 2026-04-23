@@ -543,7 +543,8 @@ bool PKBatchDrawerRibbonCPU::_is_additional_input_supported(const CStringId &p_i
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_SCALES;
 		}
 	} else if (p_input_type == BaseType_Float) {
-		if (p_input_name == BasicRendererProperties::SID_AlphaRemap_Cursor()) {
+		if (p_input_name == BasicRendererProperties::SID_AlphaRemap_Cursor() ||
+			p_input_name == BasicRendererProperties::SID_AlphaRemap_AlphaRemapCursor()) {
 			r_stream_offset_type = STREAM_OFFSET_ALPHA_CURSORS;
 		} else if (p_input_name == BasicRendererProperties::SID_Atlas_TextureID()) {
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;

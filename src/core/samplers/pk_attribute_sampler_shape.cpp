@@ -91,7 +91,7 @@ void PKAttributeSamplerShape::set_transform_mode(TransformMode p_transform_mode)
 
 void PKAttributeSamplerShape::set_sample_mode(SampleMode p_sample_mode) {
 	if (p_sample_mode == SAMPLE_SHAPE) {
-		node = nullptr;
+		_set_node(nullptr);
 	}
 	if (p_sample_mode != SAMPLE_NODE && transform_mode == TRANSFORM_NODE) {
 		set_transform_mode(TRANSFORM_NONE);
@@ -133,8 +133,8 @@ void PKAttributeSamplerShape::_changed() {
 		const Ref<SphereShape3D> sphere = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Sphere(sphere->get_radius()));
 	} else if (shape->is_class(ConvexPolygonShape3D::get_class_static()) ||
-		shape->is_class(ConcavePolygonShape3D::get_class_static()) ||
-		shape->is_class(Mesh::get_class_static())) {
+			shape->is_class(ConcavePolygonShape3D::get_class_static()) ||
+			shape->is_class(Mesh::get_class_static())) {
 		const Ref<ConvexPolygonShape3D> convex = shape;
 		if (convex.is_valid()) {
 			const Ref<ArrayMesh> mesh = convex->get_debug_mesh(); // Despite its name, this is not editor-only and seems like the proper function to retrieve the mesh data
@@ -230,8 +230,7 @@ void PKAttributeSamplerShape::_update_node() {
 
 	if (node_path.is_empty()) {
 		if (node != nullptr) {
-			node = nullptr;
-			_changed();
+			_set_node(nullptr);
 		}
 		return;
 	}
@@ -242,34 +241,40 @@ void PKAttributeSamplerShape::_update_node() {
 		return;
 	}
 	ERR_FAIL_NULL_MSG(new_node, vformat("Node path '%s' given to PKAttributeSamplerShape is not valid.", node_path.get_concatenated_names()));
-	ERR_FAIL_COND_MSG(!new_node->is_class(MeshInstance3D::get_class_static()), vformat("Node path '%s' given to PKAttributeSamplerShape is not a MeshInstance3D.", node_path.get_concatenated_names()));
-	node = static_cast<MeshInstance3D *>(new_node);
+	MeshInstance3D *as_mesh_instance = cast_to<MeshInstance3D>(new_node);
+	ERR_FAIL_NULL_MSG(as_mesh_instance, vformat("Node path '%s' given to PKAttributeSamplerShape is not a MeshInstance3D.", node_path.get_concatenated_names()));
+
+	_set_node(as_mesh_instance);
+}
+
+void PKAttributeSamplerShape::_set_node(MeshInstance3D *p_new_node) {
+	node = p_new_node;
 	_changed();
 }
 
-void PKAttributeSamplerShape::_setup_mesh_runtime_structs(CShapeDescriptor_Mesh *desc) {
+void PKAttributeSamplerShape::_setup_mesh_runtime_structs(CShapeDescriptor_Mesh *p_desc) {
 	_clear_mesh_runtime_structs();
 
 	mesh_surface_sampling_struct = PK_NEW(CMeshSurfaceSamplerStructuresRandom);
-	if (!PKGD_VERIFY(mesh_surface_sampling_struct != null)) {
+	if (!PKGD_VERIFY(mesh_surface_sampling_struct != nullptr)) {
 		return;
 	}
-	mesh_surface_sampling_struct->Build(desc->MeshProxy());
-	desc->SetSamplingStructs(mesh_surface_sampling_struct, null); // TODO: Cache & serialise these in a central manager
+	mesh_surface_sampling_struct->Build(p_desc->MeshProxy());
+	p_desc->SetSamplingStructs(mesh_surface_sampling_struct, nullptr); // TODO: Cache & serialise these in a central manager
 	mesh_kd_tree = PK_NEW(CMeshKdTree);
-	if (!PKGD_VERIFY(mesh_kd_tree != null)) {
+	if (!PKGD_VERIFY(mesh_kd_tree != nullptr)) {
 		return;
 	}
 	SMeshKdTreeBuildConfig kdTreeConfig = SMeshKdTreeBuildConfig(true); // Use fast KDTree for now. Switch to HQ one when these accel structs are cached.
-	mesh_kd_tree->Build(desc->MeshProxy(), kdTreeConfig);
-	desc->SetKdTree(mesh_kd_tree);
+	mesh_kd_tree->Build(p_desc->MeshProxy(), kdTreeConfig);
+	p_desc->SetKdTree(mesh_kd_tree);
 	mesh_projection = PK_NEW(CMeshProjection);
-	if (!PKGD_VERIFY(mesh_projection != null)) {
+	if (!PKGD_VERIFY(mesh_projection != nullptr)) {
 		return;
 	}
 	CMeshProjection::SConfig config = CMeshProjection::SConfig::Default();
-	mesh_projection->Build(desc->MeshProxy(), mesh_kd_tree, config);
-	desc->SetProjectionStructs(mesh_projection);
+	mesh_projection->Build(p_desc->MeshProxy(), mesh_kd_tree, config);
+	p_desc->SetProjectionStructs(mesh_projection);
 }
 
 void PKAttributeSamplerShape::_clear_mesh_runtime_structs() {

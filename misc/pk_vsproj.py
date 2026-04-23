@@ -41,7 +41,7 @@ def glob_recursive(pattern, node="."):
     return results
 
 # /!\ Modified ! (from godot/method.py)
-def add_to_vs_project(env, sources):
+def add_to_vs_project(env, sources, build_dir):
     for x in sources:
         #if type(x) == type(""):
         #    fname = env.File(x).path
@@ -52,14 +52,15 @@ def add_to_vs_project(env, sources):
         if len(pieces) > 0:
             basename = pieces[0]
             basename = basename.replace("\\\\", "/")
+            rel_basename = os.path.relpath(basename, build_dir)
             if os.path.isfile(basename + ".h"):
-                env.vs_incs.append(basename + ".h")
+                env.vs_incs.append(rel_basename + ".h")
             elif os.path.isfile(basename + ".hpp"):
-                env.vs_incs.append(basename + ".hpp")
+                env.vs_incs.append(rel_basename + ".hpp")
             if os.path.isfile(basename + ".c"):
-                env.vs_srcs.append(basename + ".c")
+                env.vs_srcs.append(rel_basename + ".c")
             elif os.path.isfile(basename + ".cpp"):
-                env.vs_srcs.append(basename + ".cpp")
+                env.vs_srcs.append(rel_basename + ".cpp")
 
 
 # /!\ Modified ! (from godot/method.py)
@@ -186,7 +187,7 @@ def generate_vs_project(sources, env, num_jobs, build_dir, project_name="godot-p
             def __getitem__(self, k: str):
                 return self.arg_dict[k]
     
-        add_to_vs_project(env, sources)
+        add_to_vs_project(env, sources, build_dir)
     
         for header in glob_recursive("**/*.h"):
             env.vs_incs.append(str(header))

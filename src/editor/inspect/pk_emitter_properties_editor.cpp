@@ -29,6 +29,7 @@
 static void show_single_children(int32_t p_idx_of_child_to_show, Control *p_parent) {
 	const int32_t count = p_parent->get_child_count();
 	for (int32_t i = 0; i < count; ++i) {
+		PKGD_ASSERT(p_parent->is_class(Control::get_class_static()));
 		Control *node = reinterpret_cast<Control *>(p_parent->get_child(i)); // Reasonably assumes our ui only has control children.
 		if (i == p_idx_of_child_to_show) {
 			node->show();
@@ -38,8 +39,16 @@ static void show_single_children(int32_t p_idx_of_child_to_show, Control *p_pare
 	}
 }
 
+// Same. Temporarily here because the callbacks are needed for the audio attribute sampler's mode change and dropdowns.
+// This is written in a general way so it's usable in other samplers if needed.
+static void set_enum_value(int32_t p_value, int32_t *p_target) {
+	if (PKGD_VERIFY(p_target != nullptr)) {
+		*p_target = p_value;
+	}
+}
+
 static void update_audio_sampler_bus_enums(OptionButton *p_bus_property, OptionButton *p_effect_index_property, const Ref<PKAttributeSamplerAudio> p_sampler) {
-	const AudioServer *audio_server = AudioServer::get_singleton();
+	AudioServer *audio_server = AudioServer::get_singleton();
 
 	const String selected_bus_name = p_sampler->get_bus_name();
 	const int32_t selected_bus_index = audio_server->get_bus_index(selected_bus_name);
@@ -63,11 +72,11 @@ static void update_audio_sampler_bus_enums(OptionButton *p_bus_property, OptionB
 		p_bus_property->select(0);
 	} else {
 		p_effect_index_property->select(-1);
-		const uint32_t effects_count = AudioServer::get_singleton()->get_bus_effect_count(selected_bus_index);
+		const uint32_t effects_count = audio_server->get_bus_effect_count(selected_bus_index);
 
 		uint32_t count = 0;
 		for (uint32_t i = 0; i < effects_count; ++i) {
-			Ref<AudioEffect> effect = AudioServer::get_singleton()->get_bus_effect(selected_bus_index, i);
+			Ref<AudioEffect> effect = audio_server->get_bus_effect(selected_bus_index, i);
 			if (effect->is_class(PKAudioEffectCapture::get_class_static())) {
 				String name = "PKCapture at index " + String::num_int64(i);
 				p_effect_index_property->add_item(name, i);
@@ -83,7 +92,20 @@ static void audio_bus_updated_callback(int32_t index, OptionButton *p_bus_proper
 	} else {
 		const String name = p_bus_property->get_item_text(index);
 		p_sampler->set_bus_name(name);
+
+		// if the bus was set from the dropdown, we try to put the first capture found, for practicality
+		AudioServer *audio_server = AudioServer::get_singleton();
+		const int32_t bus_index = audio_server->get_bus_index(name);
+
+		for (uint32_t i = 0; i < audio_server->get_bus_effect_count(bus_index); ++i) {
+			Ref<AudioEffect> effect = AudioServer::get_singleton()->get_bus_effect(bus_index, i);
+			if (effect->is_class(PKAudioEffectCapture::get_class_static())) {
+				p_sampler->set_effect_index(i);
+				break;
+			}
+		}
 	}
+
 	update_audio_sampler_bus_enums(p_bus_property, p_effect_index_property, p_sampler);
 }
 
@@ -410,17 +432,6 @@ Control *PKEmitterPropertiesEditor::_make_sampler_container(Control *p_parent_ca
 	foldable->set_h_size_flags(SIZE_EXPAND_FILL);
 	foldable->set_focus_mode(FocusMode::FOCUS_ACCESSIBILITY);
 
-#if 0 // Coloring depending on sampler type. It may not be a useful and godot-y feature
-	static const Color color_by_sampler_type[/*number of sampler types*/] = { Color(0.41f, 0.32f, 0.63f) }; // TODO needs colors for each ofc
-	Ref<StyleBoxFlat> stylebox = memnew(StyleBoxFlat());
-	stylebox->set_bg_color(color_by_sampler_type[p_type]);
-
-	foldable->add_theme_stylebox_override("title_panel", stylebox);
-	foldable->add_theme_stylebox_override("title_hover_panel", stylebox);
-	foldable->add_theme_stylebox_override("title_collapsed_panel", stylebox);
-	foldable->add_theme_stylebox_override("title_collapsed_hover_panel", stylebox);
-#endif
-
 	VBoxContainer *foldable_container = memnew(VBoxContainer);
 
 	foldable->add_child(foldable_container);
@@ -458,28 +469,13 @@ void PKEmitterPropertiesEditor::_make_audio_attribute_sampler(PKEmitter3D *p_emi
 
 	p_sampler_container->add_child(target_pk_channel_name);
 
-#if 0 // TODO find:  1. if we must expose this, 2. where is it possible to change it. It's not in the desc (?)
-	// Whether we must send spectrum data.
-
-	EditorProperty *is_spectrum = EditorInterface::get_singleton()->get_inspector()->instantiate_property_editor(sampler, Variant::BOOL, "is_spectrum", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE);
-	is_spectrum->set_object_and_property(sampler, "is_spectrum");
-	is_spectrum->set_label("Data As Spectrum");
-	is_spectrum->set_tooltip_text("If `true`, a DFT will be performed on channel's data before sending it to popcorn.\n"
-			"Otherwise, the waveform is sent as-is.\n"
-			"Spectrum and waveform channels are separate, even when they have the same name. Ie. You can't send both a waveform and a spectrum to the same Popcorn channel.\n");
-	is_spectrum->set_selectable(false);
-	is_spectrum->update_property();
-
-	p_sampler_container->add_child(is_spectrum);
-#endif
-
 #if 0 // Stashed away for now, since we don't have audiostreamplayer mode yet.
 	// Creating a dropdown to switch between sources.
 	OptionButton *source_select = memnew(OptionButton);
 	source_select->add_item("Bus", PKAttributeSamplerAudio::BUS_AS_SOURCE);
 	source_select->add_item("AudioStreamPlayer", PKAttributeSamplerAudio::AUDIOSTREAMPLAYER_AS_SOURCE);
 	source_select->select(sampler->get_source_mode());
-	sampler_container->add_child(source_select);
+	p_sampler_container->add_child(source_select);
 #endif
 
 	// Creating a node to serve as a container between options.
@@ -576,7 +572,6 @@ void PKEmitterPropertiesEditor::_make_audio_attribute_sampler(PKEmitter3D *p_emi
 #endif
 	smoothing_factor->connect("property_changed", call);
 	scale_factor->connect("property_changed", call);
-
 	// Signals that update the enum values in the UI. This is not really clean, but it'll work until we refactor all this to align more with Godot's properties.
 }
 template <typename Inner>
@@ -645,10 +640,32 @@ Control *PKEmitterPropertiesEditor::_make_editor_property(const CParticleAttribu
 template <typename Inner>
 EditorSpinSlider *PKEmitterPropertiesEditor::_make_slider(const CParticleAttributeDeclaration *p_declaration, int p_attribute_id, int p_index, Inner p_minimum_step, Inner p_value) {
 	EditorSpinSlider *slider = memnew(EditorSpinSlider);
-	slider->set_min(p_declaration->GetMinValue().Get<Inner>()[p_index]);
-	slider->set_max(p_declaration->GetMaxValue().Get<Inner>()[p_index]);
-	Inner range = p_declaration->GetMaxValue().Get<Inner>()[p_index] - p_declaration->GetMinValue().Get<Inner>()[p_index];
-	slider->set_step(Math::max<Inner>(range / 1000, p_minimum_step));
+	if (p_declaration->HasMin()) {
+		slider->set_min(*p_declaration->GetMinValue().Get<Inner>());
+	} else {
+		if (TTypeTraits::IsFloat<Inner>::True) {
+			slider->set_min(-1'000'000'000.0); // Due to how Godot's Range clamps values, using min/-inf doesn't work
+		} else {
+			slider->set_min(TNumericTraits<Inner>::Min());
+		}
+	}
+
+	if (p_declaration->HasMax()) {
+		slider->set_max(*p_declaration->GetMaxValue().Get<Inner>());
+	} else {
+		if (TTypeTraits::IsFloat<Inner>::True) {
+			slider->set_max(1'000'000'000.0); // Due to how Godot's Range clamps values, using max/+inf doesn't work
+		} else {
+			slider->set_max(TNumericTraits<Inner>::Max());
+		}
+	}
+
+	if (p_declaration->HasMin() && p_declaration->HasMax()) {
+		Inner range = slider->get_max() - slider->get_min();
+		slider->set_step(Math::max<Inner>(range / 1000, p_minimum_step));
+	} else {
+		slider->set_step(p_minimum_step);
+	}
 	slider->set_value(p_value);
 	Callable call = callable_mp(this, &PKEmitterPropertiesEditor::_set_attribute_by_id);
 	call = call.bind(p_index);

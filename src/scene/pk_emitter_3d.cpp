@@ -20,6 +20,8 @@
 
 namespace godot {
 
+PKEmitter3D::TransformMode PKEmitter3D::default_transform_mode = TRANSFORM_DEFAULT;
+
 void PKEmitter3D::_physics_process(double p_delta) {
 	if (!is_playing) {
 		return;
@@ -131,6 +133,11 @@ Ref<PKAttributeList> PKEmitter3D::get_attribute_list() const {
 	return attribute_list;
 }
 
+void PKEmitter3D::set_transform_mode(TransformMode p_mode) {
+	transform_mode = p_mode;
+	_reset_transforms();
+}
+
 PKEmitter3D::PKEmitter3D() {
 	is_playing = true;
 	is_disabled = false;
@@ -144,9 +151,7 @@ PKEmitter3D::~PKEmitter3D() {
 }
 
 void PKEmitter3D::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_set_property_list", "property_list"), &PKEmitter3D::set_attribute_list);
-	ClassDB::bind_method(D_METHOD("_get_property_list"), &PKEmitter3D::get_attribute_list);
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "attribute_list", PROPERTY_HINT_RESOURCE_TYPE, "PKAttributeList", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE), "_set_property_list", "_get_property_list");
+	BIND_BASIC_PROPERTY(PKEmitter3D, OBJECT, attribute_list, PROPERTY_HINT_RESOURCE_TYPE, "PKAttributeList", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE)
 
 	ClassDB::bind_method(D_METHOD("set_effect_is_playing", "effect"), &PKEmitter3D::set_effect_is_playing);
 	ClassDB::bind_method(D_METHOD("get_effect_is_playing"), &PKEmitter3D::get_effect_is_playing);
@@ -156,8 +161,14 @@ void PKEmitter3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_effect"), &PKEmitter3D::get_effect);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "effect", PROPERTY_HINT_RESOURCE_TYPE, "PKEffect"), "set_effect", "get_effect");
 
+	BIND_BASIC_PROPERTY(PKEmitter3D, INT, transform_mode, PROPERTY_HINT_ENUM, "Default,Global,Local", PROPERTY_USAGE_DEFAULT)
+
 	ADD_SIGNAL(MethodInfo("effect_changed"));
 	ClassDB::bind_method(D_METHOD("_effect_changed"), &PKEmitter3D::_effect_changed);
+
+	BIND_ENUM_CONSTANT(TRANSFORM_DEFAULT);
+	BIND_ENUM_CONSTANT(TRANSFORM_GLOBAL);
+	BIND_ENUM_CONSTANT(TRANSFORM_LOCAL);
 }
 
 void PKEmitter3D::_notification(int32_t p_what) {
@@ -247,7 +258,11 @@ void PKEmitter3D::_update_transforms() {
 		return;
 	}
 	effect_prev_transform = effect_transform;
-	effect_transform = to_pk(get_global_transform());
+	if ((transform_mode == TRANSFORM_DEFAULT && default_transform_mode == TRANSFORM_LOCAL) || transform_mode == TRANSFORM_LOCAL) {
+		effect_transform = to_pk(get_transform());
+	} else {
+		effect_transform = to_pk(get_global_transform());
+	}
 	effect_prev_velocity = effect_velocity;
 	effect_velocity = effect_transform.Translations().xyz() - effect_prev_transform.Translations().xyz();
 }
@@ -259,3 +274,5 @@ void PKEmitter3D::_reset_transforms() {
 }
 
 } // namespace godot
+
+VARIANT_ENUM_CAST(PKEmitter3D::TransformMode);

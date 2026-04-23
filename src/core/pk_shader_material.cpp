@@ -7,6 +7,7 @@
 #include "godot_cpp/classes/fbx_document.hpp"
 #include "godot_cpp/classes/fbx_state.hpp"
 #include "godot_cpp/classes/gltf_mesh.hpp"
+#include "godot_cpp/classes/gltf_node.hpp"
 #include "godot_cpp/classes/importer_mesh.hpp"
 #include "godot_cpp/classes/node.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
@@ -32,6 +33,19 @@ static Ref<Texture2D> load_texture_pk(const CString &p_pk_path) {
 	return loader->load(path, "Texture2D");
 }
 
+static void mesh_xforms_recursive(const TypedArray<Ref<GLTFNode>> &nodes, TypedArray<Transform3D> &xforms, Ref<GLTFNode> node, Transform3D xform = {}) {
+	xform *= node->get_xform();
+
+	const int32_t mesh_idx = node->get_mesh();
+	if (mesh_idx >= 0) {
+		xforms[mesh_idx] = xform;
+	}
+
+	for (int32_t child_node_idx : node->get_children()) {
+		mesh_xforms_recursive(nodes, xforms, nodes[child_node_idx], xform);
+	}
+}
+
 static Ref<Mesh> load_mesh_pk(const CString &p_pk_path) {
 	if (p_pk_path.Empty()) {
 		return nullptr;
@@ -40,34 +54,81 @@ static Ref<Mesh> load_mesh_pk(const CString &p_pk_path) {
 	String path = p_pk_path.Data();
 	path = File::DefaultFileSystem()->VirtualToPhysical(p_pk_path, IFileSystem::Access_Read).Data();
 
+	// Load the mesh file data
 	Ref<FBXDocument> document;
 	Ref<FBXState> state;
 	document.instantiate();
 	state.instantiate();
-
 	const Error err = document->append_from_file(path, state);
 	if (err != OK) {
 		return nullptr;
 	}
 
+	// Get the root nodes of the file
+	const PackedInt32Array gltf_root_nodes = state->get_root_nodes();
+	if (gltf_root_nodes.is_empty()) {
+		return nullptr;
+	}
+
+	// Get all of the meshes in the file
 	const TypedArray<Ref<GLTFMesh>> gltf_meshes = state->get_meshes();
 	if (gltf_meshes.is_empty()) {
 		return nullptr;
 	}
 
-	Ref<ArrayMesh> mesh;
-	mesh.instantiate();
+	// Get all of the nodes in the file, and init an array for mesh transforms
+	const TypedArray<Ref<GLTFNode>> gltf_nodes = state->get_nodes();
+	TypedArray<Transform3D> gltf_xforms;
+	gltf_xforms.resize(gltf_meshes.size());
 
-	RS *rs = RS::get_singleton();
-	const RID mesh_rid = mesh->get_rid();
+	// Find the transform of each mesh
+	for (int32_t root_node_idx : gltf_root_nodes) {
+		Ref<GLTFNode> node = gltf_nodes.get(root_node_idx);
+		mesh_xforms_recursive(gltf_nodes, gltf_xforms, node);
+	}
 
 	// Copy surfaces from all meshes in the file
-	for (const Ref<GLTFMesh> gltf_mesh : gltf_meshes) {
+	Ref<ArrayMesh> mesh;
+	mesh.instantiate();
+	for (int32_t mesh_idx = 0; mesh_idx < gltf_meshes.size(); mesh_idx++) {
+		const Transform3D gltf_xform = gltf_xforms[mesh_idx];
+		const Ref<GLTFMesh> gltf_mesh = gltf_meshes[mesh_idx];
 		const Ref<ImporterMesh> importer_mesh = gltf_mesh->get_mesh();
 
 		const uint32_t surface_count = importer_mesh->get_surface_count();
 		for (uint32_t j = 0; j < surface_count; ++j) {
-			mesh->add_surface_from_arrays(importer_mesh->get_surface_primitive_type(j), importer_mesh->get_surface_arrays(j));
+			Array surface_arrays = importer_mesh->get_surface_arrays(j);
+
+			// Apply the mesh transform to the vertex array
+			if (surface_arrays[Mesh::ARRAY_VERTEX] != Variant()) {
+				// TODO: Assuming one of the possible types for the vertex array: PackedVector3Array, PackedVector2Array, or Array of vertex positions.
+				PackedVector3Array vertex_array = surface_arrays[Mesh::ARRAY_VERTEX];
+				vertex_array = gltf_xform.xform(vertex_array);
+				surface_arrays[Mesh::ARRAY_VERTEX] = vertex_array;
+			}
+
+			// Apply the mesh rotation to the normal array
+			if (surface_arrays[Mesh::ARRAY_NORMAL] != Variant()) {
+				PackedVector3Array normal_array = surface_arrays[Mesh::ARRAY_NORMAL];
+				Vector3 *normal_ptrw = normal_array.ptrw();
+				for (int i = 0; i < normal_array.size(); ++i) {
+					normal_ptrw[i] = gltf_xform.basis.xform(normal_ptrw[i]).normalized();
+				}
+				surface_arrays[Mesh::ARRAY_NORMAL] = normal_array;
+			}
+
+			// Apply the mesh rotation to the tangent array
+			if (surface_arrays[Mesh::ARRAY_TANGENT] != Variant()) {
+				PackedFloat32Array tangent_array = surface_arrays[Mesh::ARRAY_TANGENT];
+				float *tangent_ptrw = tangent_array.ptrw();
+				for (int i = 0; i < tangent_array.size() / 4; ++i) {
+					Vector3 *tangent = reinterpret_cast<Vector3 *>(tangent_ptrw + i * 4);
+					*tangent = gltf_xform.basis.xform(*tangent).normalized();
+				}
+				surface_arrays[Mesh::ARRAY_TANGENT] = tangent_array;
+			}
+
+			mesh->add_surface_from_arrays(importer_mesh->get_surface_primitive_type(j), surface_arrays);
 		}
 	}
 	return mesh;
@@ -144,6 +205,8 @@ String PKShaderMaterial::get_variation_flag_name(VariationFlags p_flag) {
 			return "SKELETAL_INTERPOL";
 		case VariationFlags::SKELETAL_TRACK_INTERPOL:
 			return "SKELETAL_TRACK_INTERPOL";
+		case VariationFlags::BILLBOARD_CAPSULE:
+			return "BILLBOARD_CAPSULE";
 		default:
 			return "";
 	}
@@ -181,20 +244,24 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
 
 	// Transparency / Opaque
 	if (decl.IsFeatureEnabled(BasicRendererProperties::SID_Transparent())) {
-		const int transparent_type = decl.GetPropertyValue_I1(BasicRendererProperties::SID_Transparent_Type(), 0);
-		switch (transparent_type) {
-			case BasicRendererProperties::Additive:
-				blend_mode = BlendMode::ADDITIVE;
-				break;
-			case BasicRendererProperties::AdditiveNoAlpha:
-				blend_mode = BlendMode::ADDITIVE_NO_ALPHA;
-				break;
-			case BasicRendererProperties::PremultipliedAlpha:
-				blend_mode = BlendMode::PREMUL_ALPHA;
-				break;
-			default:
-				blend_mode = BlendMode::ALPHA_BLEND;
-				break;
+		const SRendererFeaturePropertyValue *transparent_type = decl.FindProperty(BasicRendererProperties::SID_Transparent_Type());
+		if (transparent_type != nullptr) {
+			switch (transparent_type->ValueI().x()) {
+				case BasicRendererProperties::Additive:
+					blend_mode = BlendMode::ADDITIVE;
+					break;
+				case BasicRendererProperties::AdditiveNoAlpha:
+					blend_mode = BlendMode::ADDITIVE_NO_ALPHA;
+					break;
+				case BasicRendererProperties::PremultipliedAlpha:
+					blend_mode = BlendMode::PREMUL_ALPHA;
+					break;
+				default:
+					blend_mode = BlendMode::ALPHA_BLEND;
+					break;
+			}
+		} else { // New materials
+			blend_mode = BlendMode::ALPHA_BLEND; // TODO: Should be PREMUL_ALPHA and decided in shaders
 		}
 		transparent_sort_override = decl.GetPropertyValue_I1(BasicRendererProperties::SID_Transparent_GlobalSortOverride(), 0);
 		transparent_sort_offset = decl.GetPropertyValue_F1(BasicRendererProperties::SID_Transparent_CameraSortOffset(), 0);
@@ -239,10 +306,7 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
 	// Texture atlas
 	if (decl.IsFeatureEnabled(BasicRendererProperties::SID_Atlas())) {
 		set_variation_flag(VariationFlags::ATLAS);
-		// TODO: Create a buffer to store atlas values
-		//tex_atlas = LoadAtlasPk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_Atlas_Definition(), CString::EmptyString));
-
-		const int blending_type = decl.GetPropertyValue_I1(BasicRendererProperties::SID_Atlas_Blending(), 0);
+		const BasicRendererProperties::EAtlasBlendingType blending_type = decl.GetPropertyValue_Enum(BasicRendererProperties::SID_Atlas_Blending(), BasicRendererProperties::None);
 		if (blending_type == BasicRendererProperties::Linear) {
 			set_variation_flag(VariationFlags::ATLAS_BLEND_SOFT);
 		} else if (blending_type == BasicRendererProperties::MotionVectors) {
@@ -273,9 +337,26 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
 		softness_distance = decl.GetPropertyValue_F1(BasicRendererProperties::SID_SoftParticles_SoftnessDistance(), 0.0f);
 	}
 
-	// Mesh
-	if (renderer_type == Renderer_Mesh) {
-		mesh = load_mesh_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_Mesh(), CString::EmptyString));
+	switch (renderer_type) {
+		case Renderer_Billboard:
+			// Billboarding Mode
+			if (decl.GetPropertyValue_Enum(BasicRendererProperties::SID_BillboardingMode(), BillboardMode_ScreenAligned) == BillboardMode_AxisAlignedCapsule) {
+				set_variation_flag(VariationFlags::BILLBOARD_CAPSULE);
+			}
+			break;
+
+		case Renderer_Mesh:
+			// Mesh Resource
+			mesh = load_mesh_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_Mesh(), CString::EmptyString));
+
+			// Double sided
+			if (decl.IsFeatureEnabled(BasicRendererProperties::SID_Culling_DoubleSided())) {
+				set_variation_flag(VariationFlags::DOUBLE_SIDED);
+			}
+			break;
+
+		default:
+			break;
 	}
 }
 

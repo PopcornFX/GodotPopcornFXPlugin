@@ -34,4 +34,4 @@ ios.release = {
 }
 
 [icons]
-PopcornFXEmitter3D = "res://addons/popcornfx/icons/PopcornFXEmitter3D.svg"
+PKEmitter3D = "res://addons/popcornfx/icons/PKEmitter3D.svg"
