@@ -29,8 +29,12 @@ render_mode unshaded;
 #endif
 
 void vertex() {
+#ifndef PK_HAS_BILLBOARD_CAPSULE
 	uint particle_id = uint(VERTEX_ID / 4);
-	
+#else
+	uint particle_id = uint(VERTEX_ID / 6);
+#endif
+
 #ifdef PK_HAS_DIFFUSE
 	var_diffuse_color = pk_vert_diffuse(particle_id);
 #endif

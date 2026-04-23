@@ -56,6 +56,7 @@ public:
 		SKELETAL_ANIM = (1 << 22),
 		SKELETAL_INTERPOL = (1 << 23),
 		SKELETAL_TRACK_INTERPOL = (1 << 24),
+		BILLBOARD_CAPSULE = (1 << 25),
 		MAX = 26
 	};
 

@@ -142,7 +142,7 @@ void PKAttributeSamplerAudio::_bus_changed() {
 
 	Ref<AudioEffect> selected_effect = audio_server->get_bus_effect(bus_index, effect_index);
 	if (!selected_effect.is_valid() || !selected_effect->is_class(PKAudioEffectCapture::get_class_static())) {
-		ERR_FAIL_MSG("The selected audio capture at index" + String::num(effect_index) + "is not a PopcornFxAudioCapture.");
+		return;
 	}
 
 	audio_capture = selected_effect;
@@ -173,7 +173,13 @@ void PKAttributeSamplerAudio::_update_popcorn_channel_group() {
 bool PKAttributeSamplerAudio::_capture_waveform_from_audio_capture(float *r_acc, const uint32_t p_n_samples) const {
 	if (audio_capture.is_valid() && audio_capture->can_get_buffer(p_n_samples)) { // if we do have a source
 
-		last_audio_buffer.resize(MAX(last_audio_buffer.size(), p_n_samples));
+		// This prevents reading uninitialized memory if the new size is bigger (it always is the first time, but this shouldn't trigger much afterwards)
+		uint32_t i = last_audio_buffer.size();
+		last_audio_buffer.resize(p_n_samples);
+		for (; i < p_n_samples; i++) {
+			last_audio_buffer[i] = 0.0f;
+		}
+
 		PackedVector2Array buffer = audio_capture->peek_buffer(p_n_samples);
 
 		if (buffer.is_empty()) {

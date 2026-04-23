@@ -81,10 +81,14 @@ void PKAttributeList::set_emitter(PKEmitter3D *p_emitter) {
 }
 
 void PKAttributeList::set_attribute_samplers(TypedArray<PKAttributeSampler> p_attribute_samplers) {
-	for (int i = 0; i < p_attribute_samplers.size(); i++) {
-		PKAttributeSampler *sampler = cast_to<PKAttributeSampler>(p_attribute_samplers[i].get_validated_object());
-	}
 	attribute_samplers = p_attribute_samplers;
+	for (int i = 0; i < p_attribute_samplers.size(); i++) {
+		Ref<PKAttributeSampler> sampler = p_attribute_samplers[i];
+		if (!PK_VERIFY(sampler.is_valid())) {
+			continue;
+		}
+		set_attribute_sampler_raw(i, sampler);
+	}
 }
 
 SAttributesContainer_SAttrib *PKAttributeList::attribute_raw_data() {
@@ -200,6 +204,8 @@ void PKAttributeList::_bind_methods() {
 	BIND_BASIC_PROPERTY(PKAttributeList, PACKED_BYTE_ARRAY, attribute_data, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE);
 	BIND_BASIC_PROPERTY(PKAttributeList, ARRAY, attribute_sampler_descs, PROPERTY_HINT_ARRAY_TYPE, "PKAttributeSamplerDesc", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	BIND_BASIC_PROPERTY(PKAttributeList, ARRAY, attribute_samplers, PROPERTY_HINT_ARRAY_TYPE, "PKAttributeSampler", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
+	ClassDB::bind_method(D_METHOD("get_attribute", "name"), &PKAttributeList::get_attribute_variant);
+	ClassDB::bind_method(D_METHOD("set_attribute", "name", "value"), &PKAttributeList::set_attribute_variant);
 }
 
 void PKAttributeList::_physics_process() {
@@ -218,6 +224,40 @@ void PKAttributeList::_ready() {
 		if (sampler.is_valid()) {
 			sampler->_ready();
 		}
+	}
+}
+
+bool PKAttributeList::_check_type_matches(const Variant &p_variant, EBaseTypeID p_type) {
+	const CBaseTypeTraits &traits = CBaseTypeTraits::Traits(p_type);
+	const EBaseTypeID scalar_type = traits.ScalarType;
+	Variant::Type variant_type = p_variant.get_type();
+
+	if (traits.VectorDimension > 1) {
+		if (variant_type != Variant::ARRAY) {
+			return false;
+		}
+		const Array as_array = Array(p_variant);
+		if (as_array.size() != traits.VectorDimension) {
+			return false;
+		}
+		const Variant::Type array_type = as_array[0].get_type();
+		for (const Variant &elem : as_array) {
+			if (elem.get_type() != array_type) {
+				return false;
+			}
+		}
+		variant_type = array_type;
+	}
+
+	switch (scalar_type) {
+		case PopcornFX::BaseType_Bool:
+			return variant_type == Variant::BOOL;
+		case PopcornFX::BaseType_I32:
+			return variant_type == Variant::INT;
+		case PopcornFX::BaseType_Float:
+			return variant_type == Variant::FLOAT;
+		default:
+			ERR_FAIL_V_MSG(false, vformat("Unsupported attribute type %s", CBaseTypeTraits::Traits(p_type).Name));
 	}
 }
 
@@ -291,14 +331,14 @@ void PKAttributeList::resolve_effect_change() {
 			continue;
 		}
 		if (new_desc->get_type() == old_desc->get_type()) {
-			set_attribute_sampler_raw(i, get_attribute_sampler(old_desc->get_index()), new_attribute_samplers);
+			new_attribute_samplers[i] = get_attribute_sampler(old_desc->get_index());
 		} else {
 			new_attribute_samplers[i] = create_default_sampler(new_decl);
 		}
 	}
 
-	attribute_sampler_descs = new_attribute_sampler_descs;
-	attribute_samplers = new_attribute_samplers;
+	set_attribute_sampler_descs(new_attribute_sampler_descs);
+	set_attribute_samplers(new_attribute_samplers);
 
 	reapply_attributes();
 }
@@ -337,7 +377,7 @@ void PKAttributeList::reapply_attributes() {
 
 bool PKAttributeList::get_attribute(const char *p_name, SAttributesContainer_SAttrib &r_value) const {
 	ERR_FAIL_COND_V(emitter == nullptr, false);
-	const CGuid id = emitter->effect_instance->GetAttributeID(p_name);
+	const CGuid id = emitter->effect->get_effect()->GetAttributeID(p_name);
 	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
 	if (emitter->effect_instance != nullptr) {
 		const PKAttributeDesc *desc = reinterpret_cast<PKAttributeDesc *>(attribute_descs[id].get_validated_object());
@@ -357,11 +397,59 @@ bool PKAttributeList::get_attribute(uint32_t p_id, SAttributesContainer_SAttrib 
 	return true;
 }
 
+Variant PKAttributeList::get_attribute_variant(const String &p_name) const {
+	ERR_FAIL_COND_V(emitter == nullptr, nullptr);
+	const CGuid id = emitter->effect->get_effect()->GetAttributeID(p_name.utf8().ptr());
+	ERR_FAIL_COND_V(id == CGuid::INVALID, nullptr);
+	ERR_FAIL_COND_V(attribute_descs.size() <= id, nullptr);
+	const Ref<PKAttributeDesc> desc = attribute_descs[id];
+	const EBaseTypeID type = EBaseTypeID(desc->get_type());
+	SAttributesContainer_SAttrib data{};
+	if (emitter->effect_instance != nullptr) {
+		const bool ok = emitter->effect_instance->GetRawAttribute(id, type, &data);
+		ERR_FAIL_COND_V(!ok, nullptr);
+	} else {
+		memcpy(&data, &attribute_raw_data()[id], CBaseTypeTraits::Traits(type).Size);
+	}
+
+	switch (type) {
+		case PopcornFX::BaseType_Bool:
+			return data.m_Data8b[0];
+		case PopcornFX::BaseType_Bool2:
+			return Array({ Variant(data.m_Data8b[0]), Variant(data.m_Data8b[1]) });
+		case PopcornFX::BaseType_Bool3:
+			return Array({ Variant(data.m_Data8b[0]), Variant(data.m_Data8b[1]), Variant(data.m_Data8b[2]) });
+		case PopcornFX::BaseType_Bool4:
+			return Array({ Variant(data.m_Data8b[0]), Variant(data.m_Data8b[1]), Variant(data.m_Data8b[2]), Variant(data.m_Data8b[3]) });
+
+		case PopcornFX::BaseType_I32:
+			return data.m_Data32i[0];
+		case PopcornFX::BaseType_Int2:
+			return Array({ Variant(data.m_Data32i[0]), Variant(data.m_Data32i[1]) });
+		case PopcornFX::BaseType_Int3:
+			return Array({ Variant(data.m_Data32i[0]), Variant(data.m_Data32i[1]), Variant(data.m_Data32i[2]) });
+		case PopcornFX::BaseType_Int4:
+			return Array({ Variant(data.m_Data32i[0]), Variant(data.m_Data32i[1]), Variant(data.m_Data32i[2]), Variant(data.m_Data32i[3]) });
+
+		case PopcornFX::BaseType_Float:
+			return data.m_Data32f[0];
+		case PopcornFX::BaseType_Float2:
+			return Array({ Variant(data.m_Data32f[0]), Variant(data.m_Data32f[1]) });
+		case PopcornFX::BaseType_Float3:
+			return Array({ Variant(data.m_Data32f[0]), Variant(data.m_Data32f[1]), Variant(data.m_Data32f[2]) });
+		case PopcornFX::BaseType_Float4:
+			return Array({ Variant(data.m_Data32f[0]), Variant(data.m_Data32f[1]), Variant(data.m_Data32f[2]), Variant(data.m_Data32f[3]) });
+
+		default:
+			ERR_FAIL_V_MSG(false, vformat("Unsupported attribute type %s", CBaseTypeTraits::Traits(type).Name));
+	}
+}
+
 bool PKAttributeList::set_attribute(const char *p_name, const SAttributesContainer_SAttrib &p_value) {
 	ERR_FAIL_COND_V(emitter == nullptr, false);
-	const CGuid id = emitter->effect_instance->GetAttributeID(p_name);
+	const CGuid id = emitter->effect->get_effect()->GetAttributeID(p_name);
 	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
-	ERR_FAIL_COND_V(attribute_samplers.size() <= id, false);
+	ERR_FAIL_COND_V(attribute_descs.size() <= id, false);
 	const PKAttributeDesc *desc = reinterpret_cast<PKAttributeDesc *>(attribute_descs[id].get_validated_object());
 	if (emitter->effect_instance != nullptr && !emitter->effect_instance->SetRawAttribute(id, EBaseTypeID(desc->get_type()), &p_value)) {
 		return false;
@@ -377,6 +465,107 @@ bool PKAttributeList::set_attribute(uint32_t p_id, const SAttributesContainer_SA
 		return false;
 	}
 	attribute_raw_data()[p_id] = p_value;
+	return true;
+}
+
+bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant &p_value) {
+	ERR_FAIL_COND_V(emitter == nullptr, false);
+	const CGuid id = emitter->effect->get_effect()->GetAttributeID(p_name.utf8().ptr());
+	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
+	ERR_FAIL_COND_V(attribute_descs.size() <= id, false);
+
+	const Ref<PKAttributeDesc> desc = attribute_descs[id];
+	const EBaseTypeID type = EBaseTypeID(desc->get_type());
+	ERR_FAIL_COND_V_MSG(!_check_type_matches(p_value, type), false,
+			vformat("Mismatched types when trying to set attribute %s. Given values were: %s", p_name.utf8().ptr(), p_value));
+
+	SAttributesContainer_SAttrib data{};
+
+	switch (type) {
+		case PopcornFX::BaseType_Bool:
+			data.m_Data8b[0] = bool(p_value);
+			break;
+		case PopcornFX::BaseType_Bool2: {
+			const Array array = Array(p_value);
+			data.m_Data8b[0] = bool(array[0]);
+			data.m_Data8b[1] = bool(array[1]);
+			break;
+		}
+		case PopcornFX::BaseType_Bool3: {
+			const Array array = Array(p_value);
+			data.m_Data8b[0] = bool(array[0]);
+			data.m_Data8b[1] = bool(array[1]);
+			data.m_Data8b[2] = bool(array[2]);
+			break;
+		}
+		case PopcornFX::BaseType_Bool4: {
+			const Array array = Array(p_value);
+			data.m_Data8b[0] = bool(array[0]);
+			data.m_Data8b[1] = bool(array[1]);
+			data.m_Data8b[2] = bool(array[2]);
+			data.m_Data8b[3] = bool(array[3]);
+			break;
+		}
+
+		case PopcornFX::BaseType_I32:
+			data.m_Data32i[0] = int(p_value);
+			break;
+		case PopcornFX::BaseType_Int2: {
+			const Array array = Array(p_value);
+			data.m_Data32i[0] = int(array[0]);
+			data.m_Data32i[1] = int(array[1]);
+			break;
+		}
+		case PopcornFX::BaseType_Int3: {
+			const Array array = Array(p_value);
+			data.m_Data32i[0] = int(array[0]);
+			data.m_Data32i[1] = int(array[1]);
+			data.m_Data32i[2] = int(array[2]);
+			break;
+		}
+		case PopcornFX::BaseType_Int4: {
+			const Array array = Array(p_value);
+			data.m_Data32i[0] = int(array[0]);
+			data.m_Data32i[1] = int(array[1]);
+			data.m_Data32i[2] = int(array[2]);
+			data.m_Data32i[3] = int(array[3]);
+			break;
+		}
+
+		case PopcornFX::BaseType_Float:
+			data.m_Data32f[0] = float(p_value);
+			break;
+		case PopcornFX::BaseType_Float2: {
+			const Array array = Array(p_value);
+			data.m_Data32f[0] = float(array[0]);
+			data.m_Data32f[1] = float(array[1]);
+			break;
+		}
+		case PopcornFX::BaseType_Float3: {
+			const Array array = Array(p_value);
+			data.m_Data32f[0] = float(array[0]);
+			data.m_Data32f[1] = float(array[1]);
+			data.m_Data32f[2] = float(array[2]);
+			break;
+		}
+		case PopcornFX::BaseType_Float4: {
+			const Array array = Array(p_value);
+			data.m_Data32f[0] = float(array[0]);
+			data.m_Data32f[1] = float(array[1]);
+			data.m_Data32f[2] = float(array[2]);
+			data.m_Data32f[3] = float(array[3]);
+			break;
+		}
+
+		default:
+			ERR_FAIL_V_MSG(false, vformat("Unsupported attribute type %s", CBaseTypeTraits::Traits(type).Name));
+	}
+
+	if (emitter->effect_instance != nullptr &&
+			!emitter->effect_instance->SetRawAttribute(id, type, &data)) {
+		return false;
+	}
+	attribute_raw_data()[id] = data;
 	return true;
 }
 
@@ -424,10 +613,10 @@ bool PKAttributeList::set_attribute_sampler(uint32_t p_id, Ref<PKAttributeSample
 	if (emitter->effect_instance != nullptr && !emitter->effect_instance->SetAttributeSampler(p_id, p_sampler->get_sampler())) {
 		return false;
 	}
-	return set_attribute_sampler_raw(p_id, p_sampler, attribute_samplers);
+	return set_attribute_sampler_raw(p_id, p_sampler);
 }
 
-bool PKAttributeList::set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler, TypedArray<PKAttributeSampler> &p_samplers) {
+bool PKAttributeList::set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler) {
 	if (p_sampler.is_null()) {
 		return false;
 	}
@@ -436,7 +625,7 @@ bool PKAttributeList::set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSa
 		p_sampler->connect("changed", on_change);
 		p_sampler->connect("changed", callable_mp(static_cast<Resource *>(this), &PKAttributeList::emit_changed));
 	}
-	p_samplers[p_id] = p_sampler;
+	attribute_samplers[p_id] = p_sampler;
 	return true;
 }
 

@@ -90,10 +90,14 @@ public:
 	void resolve_effect_change();
 	void resolve_attribute_change(const CParticleAttributeDeclaration *p_decl, Ref<PKAttributeDesc> p_old_desc, SAttributesContainer_SAttrib &r_value) const;
 	void reapply_attributes();
+
 	bool get_attribute(const char *p_name, SAttributesContainer_SAttrib &r_value) const;
 	bool get_attribute(uint32_t p_id, SAttributesContainer_SAttrib &r_value) const;
+	Variant get_attribute_variant(const String &p_name) const;
+
 	bool set_attribute(const char *p_name, const SAttributesContainer_SAttrib &p_value);
 	bool set_attribute(uint32_t p_id, const SAttributesContainer_SAttrib &p_value);
+	bool set_attribute_variant(const String &p_name, const Variant &p_value);
 
 	Ref<PKAttributeSampler> create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl) const;
 
@@ -118,7 +122,7 @@ public:
 	}
 	bool set_attribute_sampler(const char *p_name, Ref<PKAttributeSampler> p_sampler);
 	bool set_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
-	bool set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler, TypedArray<PKAttributeSampler> &p_samplers);
+	bool set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 
 	TMemoryView<CParticleAttributeDeclaration *const> all_attribute_declarations() const;
 	TMemoryView<CParticleAttributeSamplerDeclaration *const> all_attribute_sampler_declarations() const;
@@ -127,6 +131,8 @@ protected:
 	static void _bind_methods();
 	void _physics_process();
 	void _ready();
+
+	static bool _check_type_matches(const Variant &p_variant, EBaseTypeID p_type);
 };
 
 } // namespace godot

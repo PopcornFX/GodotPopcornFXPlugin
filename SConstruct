@@ -7,7 +7,7 @@ from misc.pk_vsproj import generate_vs_project
 from misc.pk_platform_methods import create_macos_universal_libs, PlatformPaths
 from misc.pk_platform_methods import combine_ios_libs, create_ios_xcframework
 
-POPCORNFX_VERSION = "2.24.1"
+POPCORNFX_VERSION = "2.24.2"
 POPCORNFX_LICENSE = "Godot"
 
 def link_popcornfx(bin_dir):

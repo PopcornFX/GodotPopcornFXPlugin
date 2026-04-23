@@ -132,7 +132,6 @@ bool PKBatchDrawerMeshCPU::MapBuffers(SRenderContext &p_ctx) {
 
 	// Matrix billboarding
 	m_BBJobs_Mesh.m_Exec_Matrices.m_Matrices = instanced_matrices.ViewForWriting();
-	m_BBJobs_Mesh.m_Exec_Matrices.m_UniformScale = 100;
 
 	// Additional inputs
 	if (!m_DrawPass->m_ToGenerate.m_AdditionalGeneratedInputs.Empty()) {
@@ -191,7 +190,7 @@ bool PKBatchDrawerMeshCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDe
 	RS *rs = RS::get_singleton();
 
 	// Set the bounding box of the batch drawer for culling
-	const AABB mesh_bbox = to_gd(p_to_emit.m_DrawRequests[0]->BBox());
+	AABB mesh_bbox = to_gd(p_to_emit.m_BBox);
 	rs->multimesh_set_custom_aabb(multimesh, mesh_bbox);
 
 	// Directly update the multimesh's GPU instance transforms buffer with our data
@@ -246,8 +245,8 @@ String PKBatchDrawerMeshCPU::_get_additional_stream_offset_name(AdditionalStream
 bool PKBatchDrawerMeshCPU::_is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type) {
 	if (p_input_type == BaseType_Float4) {
 		if (p_input_name == BasicRendererProperties::SID_Diffuse_Color() || // Legacy
-			p_input_name == BasicRendererProperties::SID_Diffuse_DiffuseColor() ||
-			p_input_name == BasicRendererProperties::SID_Distortion_Color()) {
+				p_input_name == BasicRendererProperties::SID_Diffuse_DiffuseColor() ||
+				p_input_name == BasicRendererProperties::SID_Distortion_Color()) {
 			r_stream_offset_type = STREAM_OFFSET_COLORS;
 		} else if (p_input_name == BasicRendererProperties::SID_Emissive_EmissiveColor()) {
 			r_stream_offset_type = STREAM_OFFSET_EMISSIVE_COLORS4;
@@ -263,7 +262,8 @@ bool PKBatchDrawerMeshCPU::_is_additional_input_supported(const CStringId &p_inp
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_SCALES;
 		}
 	} else if (p_input_type == BaseType_Float) {
-		if (p_input_name == BasicRendererProperties::SID_AlphaRemap_Cursor()) {
+		if (p_input_name == BasicRendererProperties::SID_AlphaRemap_Cursor() ||
+				p_input_name == BasicRendererProperties::SID_AlphaRemap_AlphaRemapCursor()) {
 			r_stream_offset_type = STREAM_OFFSET_ALPHA_CURSORS;
 		} else if (p_input_name == BasicRendererProperties::SID_Atlas_TextureID()) {
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;
