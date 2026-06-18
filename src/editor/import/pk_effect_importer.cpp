@@ -6,6 +6,7 @@
 #include "pk_effect_importer.h"
 
 #include "godot_cpp/classes/dir_access.hpp"
+#include "godot_cpp/classes/resource_loader.hpp"
 
 #include "core/pk_effect.h"
 #include "integration/internal/editor/pk_baker.h"
@@ -75,7 +76,15 @@ Error PKEffectImporter::_import(const String &p_source_file, const String &p_sav
 		const Ref<DirAccess> dir = DirAccess::open("res://");
 		const String new_path = effect_save_path.erase(idx, effect_save_path.length() - idx) + ".pkfx";
 		dir->rename(new_path, effect_save_path);
-		CParticleEffect::Unload(to_pk(effect_save_path)); // Unload effect so that next load doesn't use cached version
+
+		ResourceLoader *loader = ResourceLoader::get_singleton();
+
+		if (loader->exists(p_source_file)) {
+			Ref<PKEffect> resource = loader->load(p_source_file);
+			ERR_FAIL_NULL_V(resource, ERR_BUG);
+			resource->effect = nullptr; // Before unloading, properly null the effect.
+			CParticleEffect::Unload(to_pk(effect_save_path)); // Unload effect so that next load doesn't use the cached version
+		}
 	}
 	return OK;
 }

@@ -28,7 +28,11 @@ jobs:
           unzip plugin_full.zip -d plugin_extracted
           cd plugin_extracted
           cp LICENSE.md addons/popcornfx/LICENSE.md
-          zip -r ../addon.zip addons/
+          ROOT_DIR="godot-popcornfx-${{ github.ref_name }}"
+          mkdir -p "../$ROOT_DIR"
+          cp -r addons "../$ROOT_DIR/addons"
+          cd ..
+          zip -r addon.zip "$ROOT_DIR/"
 
       - uses: ncipollo/release-action@v1
         with:

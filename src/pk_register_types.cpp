@@ -24,7 +24,7 @@
 #include "scene/pk_emitter_3d.h"
 
 #ifdef TOOLS_ENABLED
-#include "editor/inspect/pk_emitter_properties_editor.h"
+#include "editor/inspect/pk_editor_property_bool_array.h"
 #include "editor/inspect/pk_inspector_plugin.h"
 #include "editor/pk_editor_plugin.h"
 #endif // TOOLS_ENABLED
@@ -70,11 +70,11 @@ void initialize_popcornfx_module(ModuleInitializationLevel p_level) {
 
 		if (Engine::get_singleton()->is_editor_hint()) { // Actually in editor, not just embed game.
 			ClassDB::register_class<PKExportPlugin>();
+			ClassDB::register_class<PKEmitter3DGizmoPlugin>();
+			ClassDB::register_class<PKEditorPropertyBoolArray>();
 			ClassDB::register_class<PKInspectorPlugin>();
 			ClassDB::register_class<PKEditorPlugin>();
 			popcornfx_manager->add_child(memnew(PKEditorPlugin));
-
-			ClassDB::register_class<PKEmitterPropertiesEditor>();
 		}
 	}
 #endif // TOOLS_ENABLED

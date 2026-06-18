@@ -89,6 +89,8 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 		if (shader_mat.mesh.is_valid()) {
 			m_PerLODMeshCount.Resize(1);
 			m_PerLODMeshCount[0] = 1;
+
+			m_GlobalMeshBounds = to_pk(shader_mat.mesh->get_aabb());
 		}
 	}
 }

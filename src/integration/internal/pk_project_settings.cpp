@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 #include "pk_project_settings.h"
 
+#include "godot_cpp/classes/dir_access.hpp"
 #include "godot_cpp/variant/variant.hpp"
 
 #include "integration/engine/pk_file_system_controller.h"
@@ -24,7 +25,7 @@ bool PKProjectSettings::load_ifn() {
 	PKFileSystemController *fs = PKFileSystemController::get_default();
 
 #if TOOLS_ENABLED
-	if (engine_settings.source_pack == "") {
+	if (engine_settings.source_pack.Empty() || engine_settings.source_pack == "res://") {
 		WARN_PRINT(vformat("PopcornFX: No Source Pack set. Please set this setting under PopcornFX/Editor."));
 		return false;
 	}
@@ -49,12 +50,19 @@ bool PKProjectSettings::load_ifn() {
 
 			const PProjectSettingsGeneral general = project_settings->General();
 
-			const CString path = CFilePath::StripFilename(engine_settings.source_pack);
+			const CString root = CFilePath::StripFilename(engine_settings.source_pack) / general->RootDir();
 			source_pack_project_file = engine_settings.source_pack;
-			engine_settings.source_pack_root = path / general->RootDir();
-			source_pack_library_dir = path / general->LibraryDir();
-			source_pack_thumbnails_dir = path / general->ThumbnailsDir();
-			source_pack_cache_dir = path / general->EditorCacheDir();
+			engine_settings.source_pack_root = root;
+			source_pack_library_dir = root / general->LibraryDir();
+			source_pack_thumbnails_dir = root / general->ThumbnailsDir();
+			source_pack_cache_dir = root / general->EditorCacheDir();
+
+			Ref<DirAccess> library_dir = DirAccess::open(to_gd(source_pack_library_dir));
+			ERR_FAIL_NULL_V_MSG(library_dir, false, vformat("Failed to open the PopcornFX project's library dir '%s'", source_pack_library_dir.Data()));
+			if (!library_dir->file_exists(".gdignore")) {
+				Ref<FileAccess> file = FileAccess::open(to_gd(source_pack_library_dir / ".gdignore"), FileAccess::WRITE);
+				ERR_FAIL_NULL_V(library_dir, false);
+			}
 
 			local_bo_context->UnloadAllFiles();
 			PK_DELETE(local_bo_context);

@@ -55,12 +55,14 @@ public:
 
 protected:
 	static void _bind_methods();
+	void _get_property_list(List<PropertyInfo> *p_list) const;
 	void _changed();
 	void _disconnect_changed();
 	virtual void _physics_process() override;
 	virtual void _ready() override;
 	void _update_node();
-	void _setup_mesh_runtime_structs(CShapeDescriptor_Mesh *desc);
+	void _set_node(MeshInstance3D *p_new_node);
+	void _setup_mesh_runtime_structs(CShapeDescriptor_Mesh *p_desc);
 	void _clear_mesh_runtime_structs();
 
 	bool ready = false;

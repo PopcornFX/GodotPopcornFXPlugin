@@ -7,7 +7,7 @@ from misc.pk_vsproj import generate_vs_project
 from misc.pk_platform_methods import create_macos_universal_libs, PlatformPaths
 from misc.pk_platform_methods import combine_ios_libs, create_ios_xcframework
 
-POPCORNFX_VERSION = "2.24.3"
+POPCORNFX_VERSION = "2.24.4"
 POPCORNFX_LICENSE = "Godot"
 
 def link_popcornfx(bin_dir):
@@ -266,8 +266,15 @@ for root, subdirs, files in os.walk(src_dir):
         # Skip editor folders if not an editor build
         if subdir == "editor" and not env.editor_build:
             continue
+        # Skip gen directory, the doc step below doubles the inclusion otherwise
+        if subdir == "gen":
+            continue
         # Add sources
         sources = sources + Glob(root + "/" + subdir + "/*.cpp")
+
+if env["target"] in ["editor", "template_debug"]:
+    doc_data = env.GodotCPPDocData("src/gen/doc_data.gen.cpp", source=Glob("doc/classes/*.xml"))
+    sources.append(doc_data)
 
 #----------------------------------------------------------------------------
 

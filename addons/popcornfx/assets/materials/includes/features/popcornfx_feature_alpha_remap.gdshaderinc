@@ -2,7 +2,7 @@
 // Uniforms
 uniform uint in_offset_alpha_cursors;
 varying flat float var_alpha_cursor;
-uniform sampler2D in_tex_alpha_remap;
+uniform sampler2D in_tex_alpha_remap : repeat_disable;
 
 // Vertex shader code
 float pk_vert_alpha_remap(uint p_particle_id) {

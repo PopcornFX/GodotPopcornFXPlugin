@@ -41,7 +41,7 @@ void PKAttributeSamplerImage::set_image_resource(Ref<Texture2D> p_image_resource
 }
 
 void PKAttributeSamplerImage::_bind_methods() {
-	BIND_BASIC_PROPERTY(PKAttributeSamplerImage, OBJECT, image_resource, PROPERTY_HINT_RESOURCE_TYPE, "Texture2D", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
+	BIND_BASIC_PROPERTY(PKAttributeSamplerImage, OBJECT, image_resource, PROPERTY_HINT_RESOURCE_TYPE, "Texture2D", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	ClassDB::bind_method(D_METHOD("changed"), &PKAttributeSamplerImage::_changed);
 }
 

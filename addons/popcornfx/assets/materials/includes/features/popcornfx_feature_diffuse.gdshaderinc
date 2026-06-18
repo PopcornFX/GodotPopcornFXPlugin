@@ -4,7 +4,7 @@ uniform uint in_offset_colors;
 varying flat vec4 var_diffuse_color;
 uniform sampler2D in_tex_diffuse : source_color;
 #ifdef PK_HAS_DIFFUSE_RAMP
-    uniform sampler2D in_tex_diffuse_ramp;
+    uniform sampler2D in_tex_diffuse_ramp : source_color, repeat_disable, filter_nearest;
 #endif
 
 // Vertex shader code
@@ -36,6 +36,10 @@ void pk_frag_diffuse(out vec4 r_albedo, FragSamplingParams p_params)
             }
         #endif
         tex_val_diffuse = mix(tex_val_diffuse, tex_val_diffuse2, p_params.blend_mix);
+    #endif
+
+    #if defined(PK_BLEND_OPAQUE) || defined(PK_BLEND_MASKED)
+        tex_val_diffuse.rgb *= tex_val_diffuse.a;
     #endif
 
     #ifdef PK_HAS_DIFFUSE_RAMP

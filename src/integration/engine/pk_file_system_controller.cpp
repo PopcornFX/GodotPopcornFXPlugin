@@ -209,6 +209,9 @@ CString PKFileSystemController::VirtualToPhysical(const CString &p_virtual_path,
 }
 
 String PKFileSystemController::sanitize_path(const String &p_path, bool p_pk_virtual) {
+	if (p_path == "") {
+		return "";
+	}
 	if (p_path.begins_with("res:/") && !p_path.begins_with("res://")) { // "res://" path has been purified by PK, un-purify it
 		return "res://" + p_path.right(-5);
 	} else if (p_pk_virtual) {

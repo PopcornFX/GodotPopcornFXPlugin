@@ -94,18 +94,20 @@ void fragment() {
 
 	// Apply computed albedo and alpha values
 	ALBEDO = albedo.rgb;
-#if defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ALPHA)
+#if defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ALPHA) || defined(PK_BLEND_PREMUL_ALPHA)
 	#if defined(PK_HAS_EMISSIVE) && !defined(PK_HAS_DIFFUSE)
 		ALPHA = 1.0;
 	#else
 		ALPHA = albedo.a;
 	#endif
-#elif defined(PK_BLEND_PREMUL_ALPHA)
-	PREMUL_ALPHA_FACTOR = albedo.a;
 #elif defined(PK_BLEND_MASKED)
 	if (albedo.a < in_mask_threshold) {
 		discard;
 	}
+#endif
+#if defined(PK_BLEND_PREMUL_ALPHA) && defined(PK_HAS_ANY_LIGHTING)
+	// According to docs, this should only be written to when using a shaded material
+	PREMUL_ALPHA_FACTOR = albedo.a;
 #endif
 
 	// Apply computed emissive values

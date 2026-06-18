@@ -56,7 +56,8 @@ _FORCE_INLINE_ CQuaternion to_pk(const Quaternion &p_vec) {
 	return reinterpret<CQuaternion>(p_vec);
 }
 _FORCE_INLINE_ CAABB to_pk(const AABB &p_bbox) {
-	return reinterpret<CAABB>(p_bbox);
+	const CFloat3 pos = to_pk(p_bbox.position);
+	return CAABB(pos, pos + to_pk(p_bbox.size));
 }
 
 _FORCE_INLINE_ CImage::EFormat to_pk(const Image::Format &p_format) {
@@ -177,6 +178,9 @@ _FORCE_INLINE_ CFloat4x4 to_pk(const Projection &p_projection) {
 // Strings
 _FORCE_INLINE_ String to_gd(const CString &p_str) {
 	return String(p_str.Data());
+}
+_FORCE_INLINE_ String to_gd(const CStringLocalized &p_str) {
+	return String(p_str.MapENG().ToUTF8().Data());
 }
 _FORCE_INLINE_ CString to_pk(const String &p_str) {
 	return CString(p_str.utf8().ptr());
