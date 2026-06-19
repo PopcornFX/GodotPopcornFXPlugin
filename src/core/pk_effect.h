@@ -18,6 +18,7 @@ namespace godot {
 
 class PKEffect : public Resource {
 	GDCLASS(PKEffect, Resource);
+	friend class PKEffectImporter;
 
 public:
 	String get_load_path() { return load_path; }
@@ -30,9 +31,9 @@ public:
 
 protected:
 	static void _bind_methods();
+	PParticleEffect effect = nullptr;
 
 private:
-	PParticleEffect effect = nullptr;
 	String load_path;
 };
 

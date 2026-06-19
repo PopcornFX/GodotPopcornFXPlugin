@@ -52,6 +52,10 @@ public:
 protected:
 	static void _bind_methods();
 	void _notification(int32_t p_what);
+	void _get_property_list(List<PropertyInfo> *p_list) const;
+	bool _set(const StringName &p_name, const Variant &p_property);
+	bool _get(const StringName &p_name, Variant &r_property) const;
+
 	friend class PKAttributeList;
 
 	static TransformMode default_transform_mode;
@@ -63,7 +67,6 @@ private:
 	PParticleEffectInstance effect_instance;
 	bool is_playing;
 	bool is_disabled;
-	double time_passed;
 	TransformMode transform_mode = TRANSFORM_DEFAULT;
 	CFloat4x4 effect_transform;
 	CFloat4x4 effect_prev_transform;

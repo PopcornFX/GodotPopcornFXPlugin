@@ -28,6 +28,7 @@ public:
 	DEFINE_BASIC_PROPERTY(String, name)
 	DEFINE_BASIC_PROPERTY(int, index)
 	DEFINE_BASIC_PROPERTY(int, type)
+	DEFINE_BASIC_PROPERTY(int, semantic)
 	DEFINE_BASIC_PROPERTY(int, uid)
 	DEFINE_BASIC_PROPERTY(PackedByteArray, default_value)
 
@@ -82,8 +83,8 @@ public:
 
 	Ref<PKAttributeDesc> get_attribute_desc(uint32_t p_id);
 	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(uint32_t p_id);
-	Ref<PKAttributeDesc> get_attribute_desc(const char *p_name);
-	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(const char *p_name);
+	Ref<PKAttributeDesc> get_attribute_desc(const String &p_name);
+	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(const String &p_name);
 	Ref<PKAttributeDesc> get_attribute_desc_by_uid(uint32_t p_uid);
 	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc_by_uid(uint32_t p_uid);
 
@@ -91,17 +92,26 @@ public:
 	void resolve_attribute_change(const CParticleAttributeDeclaration *p_decl, Ref<PKAttributeDesc> p_old_desc, SAttributesContainer_SAttrib &r_value) const;
 	void reapply_attributes();
 
-	bool get_attribute(const char *p_name, SAttributesContainer_SAttrib &r_value) const;
+	bool get_attribute(const String &p_name, SAttributesContainer_SAttrib &r_value) const;
 	bool get_attribute(uint32_t p_id, SAttributesContainer_SAttrib &r_value) const;
 	Variant get_attribute_variant(const String &p_name) const;
 
-	bool set_attribute(const char *p_name, const SAttributesContainer_SAttrib &p_value);
+	bool set_attribute(const String &p_name, const SAttributesContainer_SAttrib &p_value);
 	bool set_attribute(uint32_t p_id, const SAttributesContainer_SAttrib &p_value);
 	bool set_attribute_variant(const String &p_name, const Variant &p_value);
 
-	Ref<PKAttributeSampler> create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl) const;
+	static Ref<PKAttributeSampler> create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl);
+	static String get_sampler_class_string(const CParticleAttributeSamplerDeclaration *p_decl);
 
 	const Ref<PKAttributeSampler> get_attribute_sampler(uint32_t p_id) const;
+	const Ref<PKAttributeSampler> get_attribute_sampler(const String &p_name) const;
+	template <typename S>
+	const Ref<S> get_attribute_sampler_or_default(const String &p_name) {
+		ERR_FAIL_COND_V(emitter == nullptr, nullptr);
+		const CGuid id = emitter->effect->get_effect()->GetAttributeSamplerID(p_name.utf8().ptr());
+		ERR_FAIL_COND_V(id == CGuid::INVALID, nullptr);
+		return get_attribute_sampler_or_default<S>(id);
+	}
 	template <typename S>
 	const Ref<S> get_attribute_sampler_or_default(uint32_t p_id) {
 		static_assert(std::is_base_of_v<PKAttributeSampler, S>, "get_attribute_sampler_or_default can only be used with PKAttributeSampler subclasses.");
@@ -120,10 +130,11 @@ public:
 		ERR_FAIL_COND_V_MSG(!sampler->is_class(S::get_class_static()), nullptr, vformat("Expected type %s for Attribute Sampler %d, got %s", S::get_class_static(), p_id, sampler->get_class()));
 		return sampler;
 	}
-	bool set_attribute_sampler(const char *p_name, Ref<PKAttributeSampler> p_sampler);
+	bool set_attribute_sampler(const String &p_name, Ref<PKAttributeSampler> p_sampler);
 	bool set_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 	bool set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 
+	CParticleAttributeList::_TypeOfAttributeAndSamplerList all_declarations() const;
 	TMemoryView<CParticleAttributeDeclaration *const> all_attribute_declarations() const;
 	TMemoryView<CParticleAttributeSamplerDeclaration *const> all_attribute_sampler_declarations() const;
 
@@ -132,7 +143,14 @@ protected:
 	void _physics_process();
 	void _ready();
 
+private:
 	static bool _check_type_matches(const Variant &p_variant, EBaseTypeID p_type);
+	bool _check_effect_valid() const;
+	bool _check_instance_valid() const;
 };
+
+#define CHECK_EFFECT_VALID(return_value) \
+	if (!_check_effect_valid())          \
+	return return_value
 
 } // namespace godot

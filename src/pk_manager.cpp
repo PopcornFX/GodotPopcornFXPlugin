@@ -263,7 +263,7 @@ void PKManager::_update_audio_buffers() {
 		const PKAttributeSamplerAudio *sampler = PKAttributeSamplerAudio::get_waveform_sampler(i);
 
 		// Lazily create the buffer
-		const uint32_t id = sampler->get_target_popcorn_channel_group().Id();
+		const uint32_t id = sampler->get_target_popcorn_channel_id().Id();
 		if (!cached_audio_waveform_buffers.has(id)) {
 			cached_audio_waveform_buffers.insert(id, AudioBufferDescriptor(AUDIO_BUFFER_SIZE));
 		}
@@ -323,7 +323,7 @@ void PKManager::_update_audio_buffers() {
 		const PKAttributeSamplerAudio *sampler = PKAttributeSamplerAudio::get_spectrum_sampler(i);
 
 		// Lazily create the buffer
-		const uint32_t id = sampler->get_target_popcorn_channel_group().Id();
+		const uint32_t id = sampler->get_target_popcorn_channel_id().Id();
 		if (!cached_audio_spectrum_buffers.has(id)) {
 			cached_audio_spectrum_buffers.insert(id, AudioBufferDescriptor(AUDIO_BUFFER_SIZE));
 		}

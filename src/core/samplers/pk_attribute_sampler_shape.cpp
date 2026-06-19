@@ -97,13 +97,15 @@ void PKAttributeSamplerShape::set_sample_mode(SampleMode p_sample_mode) {
 		set_transform_mode(TRANSFORM_NONE);
 	}
 	sample_mode = p_sample_mode;
+	notify_property_list_changed();
 	emit_changed();
 }
 
 void PKAttributeSamplerShape::_bind_methods() {
-	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, OBJECT, shape, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
-	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, transform_mode, PROPERTY_HINT_ENUM, "None,Parent,Node", PROPERTY_USAGE_STORAGE);
-	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, sample_mode, PROPERTY_HINT_ENUM, "Shape,Node", PROPERTY_USAGE_STORAGE);
+	// Sync with _get_property_list
+	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, OBJECT, shape, PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,Mesh,MeshInstance3D", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
+	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, sample_mode, PROPERTY_HINT_ENUM, "Shape,Node", PROPERTY_USAGE_DEFAULT);
+	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, transform_mode, PROPERTY_HINT_ENUM, "None,Parent,Node", PROPERTY_USAGE_DEFAULT);
 	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, NODE_PATH, node_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MeshInstance3D", PROPERTY_USAGE_STORAGE);
 	ClassDB::bind_method(D_METHOD("changed"), &PKAttributeSamplerShape::_changed);
 
@@ -113,6 +115,25 @@ void PKAttributeSamplerShape::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(SAMPLE_SHAPE);
 	BIND_ENUM_CONSTANT(SAMPLE_NODE);
+}
+
+void PKAttributeSamplerShape::_get_property_list(List<PropertyInfo> *p_list) const {
+	switch (sample_mode) {
+		case SAMPLE_SHAPE:
+			p_list->push_back(PropertyInfo(
+					Variant::OBJECT,
+					"shape",
+					PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,Mesh,MeshInstance3D",
+					PROPERTY_USAGE_EDITOR));
+			break;
+		case SAMPLE_NODE:
+			p_list->push_back(PropertyInfo(
+					Variant::NODE_PATH,
+					"node_path",
+					PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MeshInstance3D",
+					PROPERTY_USAGE_EDITOR));
+			break;
+	}
 }
 
 void PKAttributeSamplerShape::_changed() {

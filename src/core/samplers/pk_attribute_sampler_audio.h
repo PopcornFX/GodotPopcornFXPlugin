@@ -17,10 +17,8 @@
 #include <pk_particles/include/ps_samplers_audio.h>
 
 namespace godot {
-class PKEmitterPropertiesEditor;
 class PKAttributeSamplerAudio : public PKAttributeSampler {
 	GDCLASS(PKAttributeSamplerAudio, PKAttributeSampler);
-	friend PKEmitterPropertiesEditor; // Only one who must call update_target_data.
 
 public:
 	enum SourceMode {
@@ -58,7 +56,7 @@ public:
 	AudioStreamPlayer *get_audiostreamplayer() const { return audio_stream_player; }
 	void set_audiostreamplayer(AudioStreamPlayer *p_node);
 
-	CStringId get_target_popcorn_channel_group() const { return target_popcorn_channel_group; }
+	CStringId get_target_popcorn_channel_id() const { return target_popcorn_channel_id; }
 
 	bool get_is_spectrum() const { return is_spectrum; }
 	void set_is_spectrum(bool p_val);
@@ -66,16 +64,17 @@ public:
 	bool get_is_pk_channel_global() const { return is_pk_channel_global; }
 	void set_is_pk_channel_global(bool p_val);
 
-	void set_target_popcorn_channel_group_string(StringName p_string);
-	StringName get_target_popcorn_channel_group_string() { return target_popcorn_channel_group_string; }
+	void set_target_popcorn_channel(StringName p_string);
+	StringName get_target_popcorn_channel() { return target_popcorn_channel; }
 
 protected:
 	static void _bind_methods();
+	void _get_property_list(List<PropertyInfo> *p_list) const;
 
 	void _bus_changed();
 	void _audiostreamplayer_changed();
 
-	void _set_target_popcorn_channel_group(CStringId p_id) { target_popcorn_channel_group = p_id; }
+	void _set_target_popcorn_channel_id(CStringId p_id) { target_popcorn_channel_id = p_id; }
 	void _update_popcorn_channel_group();
 
 	bool _capture_waveform_from_audio_capture(float *r_dst, const uint32_t p_n_samples) const;
@@ -89,8 +88,8 @@ protected:
 	int32_t effect_index = 0;
 	StringName bus_name = "";
 
-	StringName target_popcorn_channel_group_string;
-	CStringId target_popcorn_channel_group;
+	StringName target_popcorn_channel;
+	CStringId target_popcorn_channel_id;
 	bool is_spectrum = false; // false if waveform
 	bool is_pk_channel_global = true;
 
@@ -108,6 +107,8 @@ private:
 	void _register_as_spectrum_sampler() const { spectrum_samplers.push_back(this); }
 	void _unregister_as_waveform_sampler() const;
 	void _unregister_as_spectrum_sampler() const;
+
+	Vector<int> _get_valid_effects() const;
 };
 
 } // namespace godot

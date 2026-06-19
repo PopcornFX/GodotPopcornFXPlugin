@@ -47,7 +47,10 @@ def add_to_vs_project(env, sources, build_dir):
         #    fname = env.File(x).path
         #else:
         #    fname = env.File(x)[0].path
-        fname = x.path
+        try:
+            fname = x.path
+        except AttributeError:
+            fname = env.File(x)[0].path
         pieces = fname.split(".")
         if len(pieces) > 0:
             basename = pieces[0]
