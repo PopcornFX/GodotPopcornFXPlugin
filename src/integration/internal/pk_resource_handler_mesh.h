@@ -6,50 +6,56 @@
 
 #include "integration/pk_sdk.h"
 
+#include "godot_cpp/classes/mesh.hpp"
+#include "godot_cpp/classes/mesh_instance3d.hpp"
+#include "godot_cpp/classes/packed_scene.hpp"
 #include "godot_cpp/classes/ref.hpp"
-#include "godot_cpp/classes/texture2d.hpp"
 
+#include <pk_geometrics/include/ge_mesh_resource.h>
 #include <pk_kernel/include/kr_resources.h>
-#include <pk_particles/include/ps_samplers_image.h>
 
 namespace godot {
 
 class Image;
 class Resource;
-class Texture;
 
-class PKResourceImageEntry : public RefCounted {
-	GDCLASS(PKResourceImageEntry, RefCounted)
-public:
-	static void _bind_methods() {}
-	TRefPtr<CImage> pk_image;
-	Ref<Texture> gd_texture;
+struct RawSurfaceData {
+	String name;
+	PackedVector3Array vertices;
+	PackedInt32Array indices;
+	PackedVector3Array normals;
+	PackedFloat32Array tangents;
+	PackedColorArray colors;
+	PackedVector2Array UVs;
+	PackedVector2Array UV2s;
 };
 
-class PKResourceHandlerImage : public IResourceHandler {
+struct RawMeshData {
+	String name;
+	Vector<RawSurfaceData> surfaces;
+};
+
+class PKResourceMeshEntry : public RefCounted {
+	GDCLASS(PKResourceMeshEntry, RefCounted)
+public:
+	~PKResourceMeshEntry();
+	static void _bind_methods() {}
+	PResourceMesh pk_resource;
+	Ref<Resource> gd_resource;
+};
+
+class PKResourceHandlerMesh : public IResourceHandler {
 public:
 	static void startup();
 	static void shutdown();
 
-	PKResourceHandlerImage() = default;
-	~PKResourceHandlerImage() = default;
+	PKResourceHandlerMesh() = default;
+	~PKResourceHandlerMesh() = default;
 
-	/* Creates a CImageSurface from a Godot Image */
-	static CImageSurface new_surface_from_gd_img(const Ref<Image> p_image);
-	/* Creates a CImage from a Godot Image */
-	static CImage *new_from_gd_img(const Ref<Image> p_image);
-	/* Creates a CImage from a Godot Resource if possible. Returned resource may not be valid until next RenderingServer sync. */
-	static CImage *new_from_gd_resource(Ref<Resource> p_image_resource, Ref<PKResourceImageEntry> &r_entry);
-	/* Naively converts a RGB source pixel pointer to BRG */
-	static void convert_rgb8_to_bgr8(void *r_dst, const void *p_src, u32 p_size);
-	/* Naively converts a RGB source pixel pointer to BRGA */
-	static void convert_rgba8_to_bgra8(void *r_dst, const void *p_src, u32 p_size);
+	static CResourceMesh *new_from_gd_meshes(const Vector<Pair<Ref<Mesh>, Transform3D>> &p_meshes);
+	static CResourceMesh *new_from_gd_resource(const Ref<Resource> p_resource);
 
-	/*
-		If the format is supported, creates an aligned PopcornFX buffer and copies Godot image data into it.
-		Converts some formats if necessary
-	*/
-	static PRefCountedMemoryBuffer pixel_buff_from_gd_img(const Ref<Image> p_image);
+	static Ref<ArrayMesh> gd_merge_packed_scene_mesh(const Ref<PackedScene> p_scene);
 
 	virtual void *Load(
 			const CResourceManager *p_resource_manager,
@@ -93,8 +99,11 @@ public:
 			TArray<CString> &r_resource_paths) const override;
 
 private:
-	static void _deferred_update_image(const Ref<PKResourceImageEntry> p_entry);
-	static void _connect_reload_signal(Ref<PKResourceImageEntry> p_entry);
+	static Vector<RawMeshData> _raw_from_gd_meshes(const Vector<Pair<Ref<Mesh>, Transform3D>> &p_meshes);
+	static Vector<Pair<Ref<Mesh>, Transform3D>> _meshes_from_packed_scene(const Ref<PackedScene> p_packed_scene);
+
+	static void _update_mesh(Ref<PKResourceMeshEntry> p_entry);
+	static void _deferred_update_mesh(const String& p_path, Ref<PKResourceMeshEntry> p_entry);
 };
 
 } // namespace godot

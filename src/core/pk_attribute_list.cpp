@@ -1,16 +1,21 @@
-//----------------------------------------------------------------------------
+﻿//----------------------------------------------------------------------------
 // Copyright Persistant Studios, SARL.
 // https://popcornfx.com/popcornfx-community-license/
 //----------------------------------------------------------------------------
 #include "pk_attribute_list.h"
 
-#include "core/samplers/pk_attribute_sampler_audio.h"
-#include "core/samplers/pk_attribute_sampler_image.h"
-#include "core/samplers/pk_attribute_sampler_shape.h"
 #include "integration/pk_error_handling.h"
+#include "samplers/pk_attribute_sampler_audio.h"
+#include "samplers/pk_attribute_sampler_curve.h"
+#include "samplers/pk_attribute_sampler_image.h"
+#include "samplers/pk_attribute_sampler_shape.h"
 #include "scene/pk_emitter_3d.h"
 
 #include <pk_particles/include/ps_attributes.h>
+
+#define CHECK_EFFECT_VALID(return_value) \
+	if (!_check_effect_valid())          \
+	return return_value
 
 namespace godot {
 
@@ -106,6 +111,7 @@ const SAttributesContainer_SAttrib *PKAttributeList::attribute_raw_data() const 
 
 PKAttributeList::PKAttributeList() {
 	emitter = nullptr;
+	attribute_samplers = TypedArray<PKAttributeSampler>();
 }
 
 Ref<PKAttributeList> PKAttributeList::default_for_emitter(PKEmitter3D *p_emitter) {
@@ -115,8 +121,8 @@ Ref<PKAttributeList> PKAttributeList::default_for_emitter(PKEmitter3D *p_emitter
 	}
 	Ref<PKAttributeList> default_list;
 	default_list.instantiate();
-	default_list->effect = effect;
-	default_list->emitter = p_emitter;
+	default_list->set_effect(effect);
+	default_list->set_emitter(p_emitter);
 
 	// Attributes
 	for (int i = 0; i < effect->get_effect()->GetAttributeCount(); i++) {
@@ -136,27 +142,27 @@ Ref<PKAttributeList> PKAttributeList::default_for_emitter(PKEmitter3D *p_emitter
 	for (int i = 0; i < default_list->attribute_sampler_descs.size(); i++) {
 		const CParticleAttributeSamplerDeclaration *decl = effect->get_effect()->GetAttributeSamplerDecl(i);
 		default_list->attribute_sampler_descs[i] = PKAttributeSamplerDesc::from_declaration(decl, i);
-		default_list->attribute_samplers[i] = create_default_sampler(decl);
+		default_list->set_attribute_sampler_raw(i, default_list->create_default_sampler(decl));
 	}
 
 	return default_list;
 }
 
-Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc(uint32_t p_id) {
+Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc(uint32_t p_id) const {
 	if (p_id >= attribute_descs.size()) {
 		return nullptr;
 	}
 	return attribute_descs[p_id];
 }
 
-Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(uint32_t p_id) {
+Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(uint32_t p_id) const {
 	if (p_id >= attribute_sampler_descs.size()) {
 		return nullptr;
 	}
 	return attribute_sampler_descs[p_id];
 }
 
-Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc(const String &p_name) {
+Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc(const String &p_name) const {
 	for (int i = 0; i < attribute_descs.size(); i++) {
 		const Ref<PKAttributeDesc> desc = get_attribute_desc(i);
 		if (desc->get_name() == p_name) {
@@ -166,7 +172,7 @@ Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc(const String &p_name) {
 	return nullptr;
 }
 
-Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(const String &p_name) {
+Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(const String &p_name) const {
 	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
 		const Ref<PKAttributeSamplerDesc> desc = get_attribute_sampler_desc(i);
 		if (desc->get_name() == p_name) {
@@ -176,7 +182,7 @@ Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(const St
 	return nullptr;
 }
 
-Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc_by_uid(uint32_t p_uid) {
+Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc_by_uid(uint32_t p_uid) const {
 	for (int i = 0; i < attribute_descs.size(); i++) {
 		const Ref<PKAttributeDesc> desc = get_attribute_desc(i);
 		if (desc->get_uid() == p_uid) {
@@ -186,7 +192,7 @@ Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc_by_uid(uint32_t p_uid) 
 	return nullptr;
 }
 
-Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc_by_uid(uint32_t p_uid) {
+Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc_by_uid(uint32_t p_uid) const {
 	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
 		const Ref<PKAttributeSamplerDesc> desc = get_attribute_sampler_desc(i);
 		if (desc->get_uid() == p_uid) {
@@ -236,6 +242,7 @@ void PKAttributeList::_physics_process() {
 }
 
 void PKAttributeList::_ready() {
+	ready = true;
 	if (attribute_samplers.is_empty()) {
 		return;
 	}
@@ -246,38 +253,15 @@ void PKAttributeList::_ready() {
 	}
 }
 
-bool PKAttributeList::_check_type_matches(const Variant &p_variant, EBaseTypeID p_type) {
-	const CBaseTypeTraits &traits = CBaseTypeTraits::Traits(p_type);
-	const EBaseTypeID scalar_type = traits.ScalarType;
-	Variant::Type variant_type = p_variant.get_type();
-
-	if (traits.VectorDimension > 1) {
-		if (variant_type != Variant::ARRAY) {
-			return false;
+PackedStringArray PKAttributeList::_get_configuration_warnings() const {
+	PackedStringArray warnings;
+	for (int i = 0; i < attribute_samplers.size(); i++) {
+		String warning = _get_sampler_configuration_warnings(i);
+		if (!warning.is_empty()) {
+			warnings.push_back(warning);
 		}
-		const Array as_array = Array(p_variant);
-		if (as_array.size() != traits.VectorDimension) {
-			return false;
-		}
-		const Variant::Type array_type = as_array[0].get_type();
-		for (const Variant &elem : as_array) {
-			if (elem.get_type() != array_type) {
-				return false;
-			}
-		}
-		variant_type = array_type;
 	}
-
-	switch (scalar_type) {
-		case PopcornFX::BaseType_Bool:
-			return variant_type == Variant::BOOL;
-		case PopcornFX::BaseType_I32:
-			return variant_type == Variant::INT;
-		case PopcornFX::BaseType_Float:
-			return variant_type == Variant::FLOAT;
-		default:
-			ERR_FAIL_V_MSG(false, vformat("Unsupported attribute type %s", CBaseTypeTraits::Traits(p_type).Name));
-	}
+	return warnings;
 }
 
 bool attribs_match(const SAttributesContainer_SAttrib &p_a, const SAttributesContainer_SAttrib &p_b, int p_type, int p_dimension) {
@@ -323,7 +307,6 @@ void PKAttributeList::resolve_effect_change() {
 		if (old_desc == nullptr) {
 			continue;
 		}
-		const String name = old_desc->get_name();
 		resolve_attribute_change(decl, old_desc, new_attributes[i]);
 	}
 
@@ -350,7 +333,11 @@ void PKAttributeList::resolve_effect_change() {
 			continue;
 		}
 		if (new_desc->get_type() == old_desc->get_type()) {
-			new_attribute_samplers[i] = get_attribute_sampler(old_desc->get_index());
+			Ref<PKAttributeSampler> attribute_sampler = get_attribute_sampler(old_desc->get_index());
+			if (attribute_sampler.is_valid()) {
+				attribute_sampler->_update_from_descriptor(new_decl->AttribSamplerDefaultValue().Get());
+				new_attribute_samplers[i] = attribute_sampler;
+			}
 		} else {
 			new_attribute_samplers[i] = create_default_sampler(new_decl);
 		}
@@ -360,6 +347,7 @@ void PKAttributeList::resolve_effect_change() {
 	set_attribute_samplers(new_attribute_samplers);
 
 	reapply_attributes();
+	_ready();
 }
 
 void PKAttributeList::resolve_attribute_change(const CParticleAttributeDeclaration *p_decl, Ref<PKAttributeDesc> p_old_desc, SAttributesContainer_SAttrib &r_value) const {
@@ -633,17 +621,29 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 }
 
 Ref<PKAttributeSampler> PKAttributeList::create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl) {
-	const PopcornFX::CResourceDescriptor *resource_descriptor = p_decl->AttribSamplerDefaultValue().Get();
+	const CResourceDescriptor *resource_descriptor = p_decl->AttribSamplerDefaultValue().Get();
+	Ref<PKAttributeSampler> sampler;
 	switch (p_decl->ExportedType()) {
 		case SParticleDeclaration::SSampler::Sampler_Geometry:
-			return memnew(PKAttributeSamplerShape(resource_descriptor));
+			sampler = Ref(memnew(PKAttributeSamplerShape));
+			break;
 		case SParticleDeclaration::SSampler::Sampler_Audio:
-			return memnew(PKAttributeSamplerAudio(resource_descriptor));
+			sampler = Ref(memnew(PKAttributeSamplerAudio(resource_descriptor)));
+			break;
 		case SParticleDeclaration::SSampler::Sampler_Image:
-			return memnew(PKAttributeSamplerImage(resource_descriptor));
-		default:
-			return {};
+			sampler = Ref(memnew(PKAttributeSamplerImage));
+			break;
+		case SParticleDeclaration::SSampler::Sampler_Curve:
+			sampler = Ref(memnew(PKAttributeSamplerCurve(resource_descriptor)));
+			break;
 	}
+	if (sampler.is_valid()) {
+		sampler->set_emitter(emitter);
+		if (ready) {
+			sampler->_ready();
+		}
+	}
+	return sampler;
 }
 
 const Ref<PKAttributeSampler> PKAttributeList::get_attribute_sampler(uint32_t p_id) const {
@@ -686,10 +686,13 @@ bool PKAttributeList::set_attribute_sampler(uint32_t p_id, Ref<PKAttributeSample
 }
 
 bool PKAttributeList::set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSampler> p_sampler) {
-	attribute_samplers[p_id] = p_sampler;
 	if (p_sampler.is_null()) {
-		return true;
+		p_sampler = create_default_sampler(all_attribute_sampler_declarations()[p_id]);
+		if (p_sampler.is_null()) {
+			return true; // Unsupported sampler
+		}
 	}
+	attribute_samplers[p_id] = p_sampler;
 	const Callable on_change = callable_mp(this, static_cast<bool (PKAttributeList::*)(uint32_t, Ref<PKAttributeSampler>)>(&PKAttributeList::set_attribute_sampler)).bind(p_sampler).bind(p_id);
 	if (!p_sampler->is_connected("changed", on_change)) {
 		p_sampler->connect("changed", on_change);
@@ -762,5 +765,27 @@ bool PKAttributeList::_check_effect_valid() const {
 
 bool PKAttributeList::_check_instance_valid() const {
 	return emitter->get_effect_instance() != nullptr && emitter->get_effect_instance()->Alive();
+}
+
+String PKAttributeList::_get_sampler_configuration_warnings(int p_sampler_id) const {
+	const Ref<PKAttributeSampler> sampler = get_attribute_sampler(p_sampler_id);
+	if (sampler.is_null()) {
+		return "";
+	}
+	const PackedStringArray warnings = sampler->_get_configuration_warnings();
+	if (warnings.is_empty()) {
+		return "";
+	}
+	const Ref<PKAttributeSamplerDesc> desc = get_attribute_sampler_desc(p_sampler_id);
+	String formatted = vformat("%s \"%s\": ", sampler->get_class(), desc->get_name());
+	if (warnings.size() == 1) {
+		formatted += warnings[0];
+	} else {
+		for (const String &warning : warnings) {
+			formatted += U"\n◦ " + warning;
+		}
+	}
+
+	return formatted;
 }
 } // namespace godot

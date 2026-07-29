@@ -4,17 +4,13 @@
 //----------------------------------------------------------------------------
 #include "pk_shader_material.h"
 
-#include "godot_cpp/classes/fbx_document.hpp"
-#include "godot_cpp/classes/fbx_state.hpp"
-#include "godot_cpp/classes/gltf_mesh.hpp"
-#include "godot_cpp/classes/gltf_node.hpp"
-#include "godot_cpp/classes/importer_mesh.hpp"
 #include "godot_cpp/classes/node.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/resource_loader.hpp"
 #include "godot_cpp/classes/shader_material.hpp"
 
 #include "integration/engine/render/pk_renderer_cache.h"
+#include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_plugin_types.h"
 
 #include <pk_particles/include/Renderers/ps_renderer_base.h>
@@ -33,105 +29,19 @@ static Ref<Texture2D> load_texture_pk(const CString &p_pk_path) {
 	return loader->load(path, "Texture2D");
 }
 
-static void mesh_xforms_recursive(const TypedArray<Ref<GLTFNode>> &nodes, TypedArray<Transform3D> &xforms, Ref<GLTFNode> node, Transform3D xform = {}) {
-	xform *= node->get_xform();
-
-	const int32_t mesh_idx = node->get_mesh();
-	if (mesh_idx >= 0) {
-		xforms[mesh_idx] = xform;
-	}
-
-	for (int32_t child_node_idx : node->get_children()) {
-		mesh_xforms_recursive(nodes, xforms, nodes[child_node_idx], xform);
-	}
-}
-
 static Ref<Mesh> load_mesh_pk(const CString &p_pk_path) {
 	if (p_pk_path.Empty()) {
 		return nullptr;
 	}
+	CString path = File::DefaultFileSystem()->VirtualToPhysical(p_pk_path, IFileSystem::Access_Read).Data();
 
-	String path = p_pk_path.Data();
-	path = File::DefaultFileSystem()->VirtualToPhysical(p_pk_path, IFileSystem::Access_Read).Data();
-
-	// Load the mesh file data
-	Ref<FBXDocument> document;
-	Ref<FBXState> state;
-	document.instantiate();
-	state.instantiate();
-	const Error err = document->append_from_file(path, state);
-	if (err != OK) {
+	RenderingServer::get_singleton()->force_sync(); // Needed to avoid cyclic load errors.
+	Ref<godot::Resource> resource = ResourceLoader::get_singleton()->load(to_gd(path));
+	if (resource.is_null()) {
 		return nullptr;
 	}
 
-	// Get the root nodes of the file
-	const PackedInt32Array gltf_root_nodes = state->get_root_nodes();
-	if (gltf_root_nodes.is_empty()) {
-		return nullptr;
-	}
-
-	// Get all of the meshes in the file
-	const TypedArray<Ref<GLTFMesh>> gltf_meshes = state->get_meshes();
-	if (gltf_meshes.is_empty()) {
-		return nullptr;
-	}
-
-	// Get all of the nodes in the file, and init an array for mesh transforms
-	const TypedArray<Ref<GLTFNode>> gltf_nodes = state->get_nodes();
-	TypedArray<Transform3D> gltf_xforms;
-	gltf_xforms.resize(gltf_meshes.size());
-
-	// Find the transform of each mesh
-	for (int32_t root_node_idx : gltf_root_nodes) {
-		Ref<GLTFNode> node = gltf_nodes.get(root_node_idx);
-		mesh_xforms_recursive(gltf_nodes, gltf_xforms, node);
-	}
-
-	// Copy surfaces from all meshes in the file
-	Ref<ArrayMesh> mesh;
-	mesh.instantiate();
-	for (int32_t mesh_idx = 0; mesh_idx < gltf_meshes.size(); mesh_idx++) {
-		const Transform3D gltf_xform = gltf_xforms[mesh_idx];
-		const Ref<GLTFMesh> gltf_mesh = gltf_meshes[mesh_idx];
-		const Ref<ImporterMesh> importer_mesh = gltf_mesh->get_mesh();
-
-		const uint32_t surface_count = importer_mesh->get_surface_count();
-		for (uint32_t j = 0; j < surface_count; ++j) {
-			Array surface_arrays = importer_mesh->get_surface_arrays(j);
-
-			// Apply the mesh transform to the vertex array
-			if (surface_arrays[Mesh::ARRAY_VERTEX] != Variant()) {
-				// TODO: Assuming one of the possible types for the vertex array: PackedVector3Array, PackedVector2Array, or Array of vertex positions.
-				PackedVector3Array vertex_array = surface_arrays[Mesh::ARRAY_VERTEX];
-				vertex_array = gltf_xform.xform(vertex_array);
-				surface_arrays[Mesh::ARRAY_VERTEX] = vertex_array;
-			}
-
-			// Apply the mesh rotation to the normal array
-			if (surface_arrays[Mesh::ARRAY_NORMAL] != Variant()) {
-				PackedVector3Array normal_array = surface_arrays[Mesh::ARRAY_NORMAL];
-				Vector3 *normal_ptrw = normal_array.ptrw();
-				for (int i = 0; i < normal_array.size(); ++i) {
-					normal_ptrw[i] = gltf_xform.basis.xform(normal_ptrw[i]).normalized();
-				}
-				surface_arrays[Mesh::ARRAY_NORMAL] = normal_array;
-			}
-
-			// Apply the mesh rotation to the tangent array
-			if (surface_arrays[Mesh::ARRAY_TANGENT] != Variant()) {
-				PackedFloat32Array tangent_array = surface_arrays[Mesh::ARRAY_TANGENT];
-				float *tangent_ptrw = tangent_array.ptrw();
-				for (int i = 0; i < tangent_array.size() / 4; ++i) {
-					Vector3 *tangent = reinterpret_cast<Vector3 *>(tangent_ptrw + i * 4);
-					*tangent = gltf_xform.basis.xform(*tangent).normalized();
-				}
-				surface_arrays[Mesh::ARRAY_TANGENT] = tangent_array;
-			}
-
-			mesh->add_surface_from_arrays(importer_mesh->get_surface_primitive_type(j), surface_arrays);
-		}
-	}
-	return mesh;
+	return PKResourceHandlerMesh::gd_merge_packed_scene_mesh(resource);
 }
 
 String PKShaderMaterial::get_blend_mode_name(BlendMode p_mode) {

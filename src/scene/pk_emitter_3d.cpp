@@ -185,9 +185,10 @@ void PKEmitter3D::set_effect(const Ref<PKEffect> &p_effect) {
 	if (effect.is_valid()) {
 		effect->connect(PKStringNames::get_singleton()->changed, callable_mp(this, &PKEmitter3D::_effect_changed));
 		_effect_changed();
+	} else {
+		notify_property_list_changed();
+		update_configuration_warnings();
 	}
-
-	notify_property_list_changed();
 }
 
 Ref<PKEffect> PKEmitter3D::get_effect() const {
@@ -201,7 +202,6 @@ void PKEmitter3D::set_effect_is_playing(const bool p_is_playing) {
 	} else {
 		kill_effect();
 	}
-	notify_property_list_changed();
 }
 
 bool PKEmitter3D::get_effect_is_playing() const {
@@ -237,9 +237,15 @@ void PKEmitter3D::kill_effect() {
 }
 
 void PKEmitter3D::set_attribute_list(Ref<PKAttributeList> p_attribute_list) {
-	this->attribute_list = p_attribute_list;
-	p_attribute_list->set_emitter(this);
+	ERR_FAIL_NULL(p_attribute_list);
+	attribute_list = p_attribute_list;
+	Callable call = callable_mp(this, &PKEmitter3D::_attribute_list_changed);
+	if (!attribute_list->is_connected("changed", call)) {
+		attribute_list->connect("changed", call);
+	}
+	attribute_list->set_emitter(this);
 	notify_property_list_changed();
+	update_configuration_warnings();
 }
 
 Ref<PKAttributeList> PKEmitter3D::get_attribute_list() const {
@@ -253,7 +259,7 @@ void PKEmitter3D::set_transform_mode(TransformMode p_mode) {
 
 PKEmitter3D::PKEmitter3D() {
 	is_playing = true;
-	is_disabled = false;
+	is_disabled = true;
 	effect_transform = to_pk(Transform3D());
 	effect_prev_transform = effect_transform;
 	effect_velocity = CFloat3::ZERO;
@@ -263,8 +269,15 @@ PKEmitter3D::PKEmitter3D() {
 PKEmitter3D::~PKEmitter3D() {
 }
 
+PackedStringArray PKEmitter3D::_get_configuration_warnings() const {
+	if (attribute_list.is_valid()) {
+		return attribute_list->_get_configuration_warnings();
+	}
+	return {};
+}
+
 void PKEmitter3D::_bind_methods() {
-	BIND_BASIC_PROPERTY(PKEmitter3D, OBJECT, attribute_list, PROPERTY_HINT_RESOURCE_TYPE, "PKAttributeList", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE)
+	BIND_BASIC_PROPERTY(PKEmitter3D, OBJECT, attribute_list, PROPERTY_HINT_RESOURCE_TYPE, "PKAttributeList", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 
 	ClassDB::bind_method(D_METHOD("set_effect_is_playing", "effect"), &PKEmitter3D::set_effect_is_playing);
 	ClassDB::bind_method(D_METHOD("get_effect_is_playing"), &PKEmitter3D::get_effect_is_playing);
@@ -274,7 +287,7 @@ void PKEmitter3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_effect"), &PKEmitter3D::get_effect);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "effect", PROPERTY_HINT_RESOURCE_TYPE, "PKEffect"), "set_effect", "get_effect");
 
-	BIND_BASIC_PROPERTY(PKEmitter3D, INT, transform_mode, PROPERTY_HINT_ENUM, "Default,Global,Local", PROPERTY_USAGE_DEFAULT)
+	BIND_BASIC_PUBLIC_PROPERTY(PKEmitter3D, INT, transform_mode, PROPERTY_HINT_ENUM, "Default,Global,Local", PROPERTY_USAGE_DEFAULT);
 
 	ADD_SIGNAL(MethodInfo("effect_changed"));
 	ClassDB::bind_method(D_METHOD("_effect_changed"), &PKEmitter3D::_effect_changed);
@@ -286,15 +299,15 @@ void PKEmitter3D::_bind_methods() {
 
 void PKEmitter3D::_notification(int32_t p_what) {
 	switch (p_what) {
+		case NOTIFICATION_POSTINITIALIZE: {
+			Node *node = memnew(Node);
+			add_child(node);
+			node->set_owner(this);
+			break;
+		}
 		case NOTIFICATION_PREDELETE:
 			if (effect_instance != nullptr) {
 				kill_effect();
-			}
-			break;
-		case NOTIFICATION_ENTER_TREE:
-			is_disabled = false;
-			if (is_node_ready() && is_playing) {
-				start_effect();
 			}
 			break;
 #if DEBUG_NOTIFICATIONS
@@ -313,7 +326,7 @@ void PKEmitter3D::_notification(int32_t p_what) {
 			break;
 		case NOTIFICATION_ENTER_WORLD: {
 			is_disabled = false;
-			if (effect_instance != nullptr && is_playing && !is_disabled) {
+			if (effect.is_valid() && is_playing) {
 				if (!start_effect()) {
 					CLog::Log(PK_WARN, "PKEmitter3D Failed to start effect");
 				}
@@ -461,15 +474,21 @@ void PKEmitter3D::_effect_changed() {
 
 	if (attribute_list.is_null() || attribute_list->get_effect().is_null() || attribute_list->get_effect()->get_load_path() != effect->get_load_path()) {
 		attribute_list = PKAttributeList::default_for_emitter(this);
+		attribute_list->_ready();
 	} else {
 		attribute_list->set_effect(effect);
 		attribute_list->resolve_effect_change();
 	}
 	notify_property_list_changed();
+	update_configuration_warnings();
 
 	set_effect_is_playing(is_playing);
 
 	emit_signal("effect_changed");
+}
+
+void PKEmitter3D::_attribute_list_changed() {
+	update_configuration_warnings();
 }
 
 void PKEmitter3D::_update_transforms() {

@@ -7,6 +7,7 @@
 #include "integration/pk_sdk.h"
 
 #include <pk_render_helpers/include/frame_collector/rh_particle_render_data_factory.h>
+#include <pk_render_helpers/include/frame_collector/rh_batch_drawer.h> // CRendererBatchDrawer
 
 class PKRenderDataFactory {
 public:

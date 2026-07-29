@@ -40,7 +40,7 @@ public:
 	virtual void _exit_tree() override;
 	void render();
 
-	static const PKManager *get_singleton() { return singleton; }
+	static PKManager *get_singleton() { return singleton; }
 
 	TMemoryView<const float *const> get_waveform(CStringId p_channel_group, u32 &r_base_count) const;
 	TMemoryView<const float *const> get_spectrum(CStringId p_channel_group, u32 &r_base_count) const;

@@ -29,6 +29,8 @@ bool PKInspectorPlugin::_parse_property(Object *p_object, Variant::Type p_type, 
 			}
 			return false;
 		}
+		default:
+			break;
 	}
 
 	return false;

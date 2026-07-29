@@ -81,12 +81,12 @@ public:
 	SAttributesContainer_SAttrib *attribute_raw_data();
 	const SAttributesContainer_SAttrib *attribute_raw_data() const;
 
-	Ref<PKAttributeDesc> get_attribute_desc(uint32_t p_id);
-	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(uint32_t p_id);
-	Ref<PKAttributeDesc> get_attribute_desc(const String &p_name);
-	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(const String &p_name);
-	Ref<PKAttributeDesc> get_attribute_desc_by_uid(uint32_t p_uid);
-	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc_by_uid(uint32_t p_uid);
+	Ref<PKAttributeDesc> get_attribute_desc(uint32_t p_id) const;
+	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(uint32_t p_id) const;
+	Ref<PKAttributeDesc> get_attribute_desc(const String &p_name) const;
+	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(const String &p_name) const;
+	Ref<PKAttributeDesc> get_attribute_desc_by_uid(uint32_t p_uid) const;
+	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc_by_uid(uint32_t p_uid) const;
 
 	void resolve_effect_change();
 	void resolve_attribute_change(const CParticleAttributeDeclaration *p_decl, Ref<PKAttributeDesc> p_old_desc, SAttributesContainer_SAttrib &r_value) const;
@@ -100,7 +100,7 @@ public:
 	bool set_attribute(uint32_t p_id, const SAttributesContainer_SAttrib &p_value);
 	bool set_attribute_variant(const String &p_name, const Variant &p_value);
 
-	static Ref<PKAttributeSampler> create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl);
+	Ref<PKAttributeSampler> create_default_sampler(const CParticleAttributeSamplerDeclaration *p_decl);
 	static String get_sampler_class_string(const CParticleAttributeSamplerDeclaration *p_decl);
 
 	const Ref<PKAttributeSampler> get_attribute_sampler(uint32_t p_id) const;
@@ -120,7 +120,7 @@ public:
 
 		Ref<PKAttributeSampler> sampler = get_attribute_sampler(p_id);
 		if (sampler == nullptr) {
-			const PopcornFX::CResourceDescriptor *resource_desc = all_attribute_sampler_declarations()[p_id]->AttribSamplerDefaultValue().Get();
+			const CResourceDescriptor *resource_desc = all_attribute_sampler_declarations()[p_id]->AttribSamplerDefaultValue().Get();
 			sampler = Ref<PKAttributeSampler>(memnew(S(resource_desc)));
 			sampler->set_emitter(emitter);
 
@@ -142,15 +142,16 @@ protected:
 	static void _bind_methods();
 	void _physics_process();
 	void _ready();
+	PackedStringArray _get_configuration_warnings() const;
 
 private:
 	static bool _check_type_matches(const Variant &p_variant, EBaseTypeID p_type);
 	bool _check_effect_valid() const;
 	bool _check_instance_valid() const;
-};
 
-#define CHECK_EFFECT_VALID(return_value) \
-	if (!_check_effect_valid())          \
-	return return_value
+	String _get_sampler_configuration_warnings(int p_sampler_id) const;
+
+	bool ready = false;
+};
 
 } // namespace godot

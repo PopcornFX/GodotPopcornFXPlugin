@@ -6,6 +6,8 @@
 #include "pk_baker.h"
 
 #include "integration/internal/pk_project_settings.h"
+#include "integration/internal/pk_resource_handler_image.h"
+#include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_plugin.h"
 
 #include <pk_base_object/include/hbo_object.h>
@@ -54,9 +56,8 @@ bool PKBakeContext::init() {
 	PKGD_ASSERT(bake_resource_vectorfield_handler == nullptr);
 
 	// Keep this updated with all PopcornFX resource types
-	bake_resource_mesh_handler = PK_NEW(CResourceHandlerMesh);
-	bake_resource_image_handler = PK_NEW(CResourceHandlerImage);
-	//bake_resource_image_handler = PK_NEW(CResourceHandlerImageGodot); // FIXME: We want to use the custom ResourceHandler but it causes a deadlock.
+	bake_resource_mesh_handler = PK_NEW(PKResourceHandlerMesh);
+	bake_resource_image_handler = PK_NEW(PKResourceHandlerImage);
 	bake_resource_rectangle_list_handler = PK_NEW(CResourceHandlerRectangleList);
 	bake_resource_fontmetrics_handler = PK_NEW(CResourceHandlerFontMetrics);
 	bake_resource_vectorfield_handler = PK_NEW(CResourceHandlerVectorField);

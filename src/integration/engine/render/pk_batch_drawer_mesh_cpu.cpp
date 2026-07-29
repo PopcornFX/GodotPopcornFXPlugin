@@ -86,7 +86,7 @@ bool PKBatchDrawerMeshCPU::AllocBuffers(SRenderContext &p_ctx) {
 
 	// Additional inputs
 	if (m_DrawPass->m_IsNewFrame) {
-		const uint32_t add_input_count = m_DrawPass->m_ToGenerate.m_AdditionalGeneratedInputs.Count();
+		const uint32_t add_input_count = m_AdditionalInputs.Count();
 
 		_clear_stream_offsets();
 		additional_inputs.Clear();
@@ -96,7 +96,7 @@ bool PKBatchDrawerMeshCPU::AllocBuffers(SRenderContext &p_ctx) {
 
 		uint32_t sim_data_size_bytes = 0;
 		for (uint32_t i_input = 0; i_input < add_input_count; ++i_input) {
-			const SRendererFeatureFieldDefinition &additional_input = m_DrawPass->m_ToGenerate.m_AdditionalGeneratedInputs[i_input];
+			const SRendererFeatureFieldDefinition &additional_input = m_AdditionalInputs[i_input];
 
 			const uint32_t type_size = CBaseTypeTraits::Traits(additional_input.m_Type).Size;
 			AdditionalStreamOffsets stream_offset_type = AdditionalStreamOffsets::STREAM_OFFSET_MAX;
@@ -134,7 +134,7 @@ bool PKBatchDrawerMeshCPU::MapBuffers(SRenderContext &p_ctx) {
 	m_BBJobs_Mesh.m_Exec_Matrices.m_Matrices = instanced_matrices.ViewForWriting();
 
 	// Additional inputs
-	if (!m_DrawPass->m_ToGenerate.m_AdditionalGeneratedInputs.Empty()) {
+	if (!m_AdditionalInputs.Empty()) {
 		const uint32_t add_input_count = additional_inputs.Count();
 
 		uint8_t *sim_data_ptr = sim_data.map();

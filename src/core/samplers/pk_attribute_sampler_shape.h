@@ -11,6 +11,7 @@
 #include "pk_attribute_sampler.h"
 
 #include <pk_geometrics/include/ge_coordinate_frame.h>
+#include <pk_geometrics/include/ge_mesh_resource.h>
 #include <pk_particles/include/ps_samplers_shape.h>
 
 namespace godot {
@@ -31,7 +32,6 @@ public:
 	};
 
 	PKAttributeSamplerShape() = default;
-	PKAttributeSamplerShape(const PopcornFX::CResourceDescriptor *) {}
 	virtual ~PKAttributeSamplerShape();
 
 	virtual void set_emitter(PKEmitter3D *p_emitter) override;
@@ -41,6 +41,7 @@ public:
 	void set_shape(Ref<Resource> p_shape);
 	NodePath get_node_path() const {
 		if (node != nullptr) {
+			ERR_FAIL_NULL_V(parent, "");
 			return parent->get_path_to(node);
 		}
 		return "";
@@ -77,6 +78,8 @@ protected:
 
 	PackedVector3Array mesh_vertices;
 	PackedInt32Array mesh_indices;
+
+	PResourceMesh mesh_resource;
 
 	CMeshSurfaceSamplerStructuresRandom *mesh_surface_sampling_struct = nullptr;
 	CMeshKdTree *mesh_kd_tree = nullptr;

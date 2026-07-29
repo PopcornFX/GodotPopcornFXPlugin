@@ -9,11 +9,11 @@
 #include "godot_cpp/variant/variant.hpp"
 
 #include "integration/engine/pk_file_system_controller.h"
-#include "integration/internal/pk_resource_handler_image.h"
 #include "integration/pk_error_handling.h"
 #include "integration/pk_sdk.h"
+#include "pk_resource_handler_image.h"
+#include "pk_resource_handler_mesh.h"
 
-// init
 #include <pk_base_object/include/hb_init.h>
 #include <pk_compiler/include/cp_init.h>
 #include <pk_engine_utils/include/eu_init.h>
@@ -260,6 +260,7 @@ bool popcornfx_startup() {
 	PK_LOG_MODULE_INIT_END;
 
 	PKResourceHandlerImage::startup();
+	PKResourceHandlerMesh::startup();
 
 #ifdef TOOLS_ENABLED
 	AssetBaker::Startup();
@@ -280,6 +281,7 @@ void popcornfx_shutdown() {
 	HBO::g_Context->UnloadAllFiles();
 
 	PKResourceHandlerImage::shutdown();
+	PKResourceHandlerMesh::shutdown();
 
 #ifdef TOOLS_ENABLED
 	AssetBaker::Shutdown();

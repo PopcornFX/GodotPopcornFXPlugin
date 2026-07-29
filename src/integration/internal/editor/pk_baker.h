@@ -28,11 +28,11 @@ struct PKBakeContext {
 	IFileSystem *bake_fs_controller = nullptr;
 	CResourceManager *bake_resource_manager = nullptr;
 	HBO::CContext *bake_context = nullptr;
-	CResourceHandlerImage *bake_resource_image_handler = nullptr;
-	CResourceHandlerMesh *bake_resource_mesh_handler = nullptr;
-	CResourceHandlerRectangleList *bake_resource_rectangle_list_handler = nullptr;
-	CResourceHandlerVectorField *bake_resource_vectorfield_handler = nullptr;
-	CResourceHandlerFontMetrics *bake_resource_fontmetrics_handler = nullptr;
+	IResourceHandler *bake_resource_image_handler = nullptr;
+	IResourceHandler *bake_resource_mesh_handler = nullptr;
+	IResourceHandler *bake_resource_rectangle_list_handler = nullptr;
+	IResourceHandler *bake_resource_vectorfield_handler = nullptr;
+	IResourceHandler *bake_resource_fontmetrics_handler = nullptr;
 
 	PKBakeContext() = default;
 	~PKBakeContext();

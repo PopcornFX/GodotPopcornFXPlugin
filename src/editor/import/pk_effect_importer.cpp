@@ -80,10 +80,11 @@ Error PKEffectImporter::_import(const String &p_source_file, const String &p_sav
 		ResourceLoader *loader = ResourceLoader::get_singleton();
 
 		if (loader->exists(p_source_file)) {
-			Ref<PKEffect> resource = loader->load(p_source_file);
-			ERR_FAIL_NULL_V(resource, ERR_BUG);
-			resource->effect = nullptr; // Before unloading, properly null the effect.
-			CParticleEffect::Unload(to_pk(effect_save_path)); // Unload effect so that next load doesn't use the cached version
+			const Ref<PKEffect> resource = loader->load(p_source_file);
+			if (resource.is_valid()) {
+				resource->effect = nullptr; // Before unloading, properly null the effect.
+				CParticleEffect::Unload(to_pk(effect_save_path)); // Unload effect so that next load doesn't use the cached version
+			}
 		}
 	}
 	return OK;

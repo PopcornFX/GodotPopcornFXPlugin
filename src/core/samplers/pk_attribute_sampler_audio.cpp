@@ -21,9 +21,9 @@ PKAttributeSamplerAudio::PKAttributeSamplerAudio() {
 		_register_as_waveform_sampler();
 	}
 }
-PKAttributeSamplerAudio::PKAttributeSamplerAudio(const PopcornFX::CResourceDescriptor *p_resource_desc) {
+PKAttributeSamplerAudio::PKAttributeSamplerAudio(const CResourceDescriptor *p_resource_desc) {
 	desc = PK_NEW(CParticleSamplerDescriptor_Audio_Default);
-	const PopcornFX::CResourceDescriptor_Audio *resource_desc = HBO::Cast<const PopcornFX::CResourceDescriptor_Audio>(p_resource_desc);
+	const CResourceDescriptor_Audio *resource_desc = HBO::Cast<const CResourceDescriptor_Audio>(p_resource_desc);
 
 	target_popcorn_channel = String(resource_desc->ChannelGroupNameGUID().ToStringData());
 	is_spectrum = resource_desc->Mode();

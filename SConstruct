@@ -7,7 +7,7 @@ from misc.pk_vsproj import generate_vs_project
 from misc.pk_platform_methods import create_macos_universal_libs, PlatformPaths
 from misc.pk_platform_methods import combine_ios_libs, create_ios_xcframework
 
-POPCORNFX_VERSION = "2.24.4"
+POPCORNFX_VERSION = "2.25.0"
 POPCORNFX_LICENSE = "Godot"
 
 def link_popcornfx(bin_dir):
@@ -15,6 +15,11 @@ def link_popcornfx(bin_dir):
     # -------------------------------------------------
     # POPCORNFX SDK
     # -------------------------------------------------
+
+    # TODO: Linux ARM64 not supported yet. Check before downloading the SDK.
+    if env['platform'] == "linux" and env['arch'] != "x86_64":
+        print("Error: Linux ARM64 not supported.")
+        Exit(255)
 
     if env["popcornfx_dev"]:
         pk_root_dir = "../../"
