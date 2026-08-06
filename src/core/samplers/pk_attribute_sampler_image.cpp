@@ -14,9 +14,6 @@
 
 namespace godot {
 
-PKAttributeSamplerImage::PKAttributeSamplerImage(const PopcornFX::CResourceDescriptor *) {
-}
-
 PKAttributeSamplerImage::~PKAttributeSamplerImage() {
 	_clear();
 }

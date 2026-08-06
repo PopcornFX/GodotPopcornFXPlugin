@@ -30,6 +30,8 @@ void PKExportPlugin::_export_file(const String &p_path, const String &p_type, co
 		for (const String &dep : deps) {
 			_copy_file(dep);
 		}
+	} else if (p_path == "res://addons/popcornfx/popcornfx.gdextension") {
+		_copy_from_recursive("res://addons/popcornfx/assets");
 	}
 }
 

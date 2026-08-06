@@ -6,9 +6,34 @@
 
 #include "core/pk_buffer.h"
 
+#include "core/pk_audio_player_pool.h"
 #include "integration/pk_sdk.h"
 
 #include <pk_render_helpers/include/frame_collector/rh_particle_render_data_factory.h>
+
+struct PKParticleMaterialDescSound {
+	StringName sound_path;
+
+	PKAudioPlayerPool<AudioStreamPlayer3D> pool; // TODO modify when 2D
+
+	bool init_from_renderer(const CRendererDataSound &p_renderer);
+
+	bool operator==(const PKParticleMaterialDescSound &p_other) const;
+};
+
+class PKRendererCacheAudio : public CRendererCacheBase {
+public:
+	PKParticleMaterialDescSound material_desc_sound;
+
+	PKRendererCacheAudio() = default;
+	~PKRendererCacheAudio();
+
+	virtual void UpdateThread_BuildBillboardingFlags(const PRendererDataBase &p_renderer) override;
+
+	bool setup_renderer_sound(const CRendererDataSound *p_renderer);
+
+	bool operator==(const PKRendererCacheAudio &p_other) const;
+};
 
 class PKRendererCache : public CRendererCacheBase {
 public:

@@ -47,6 +47,7 @@ public:
 
 	PKEmitter3D();
 	~PKEmitter3D();
+	PackedStringArray _get_configuration_warnings() const;
 
 protected:
 	static void _bind_methods();
@@ -73,6 +74,7 @@ private:
 	CFloat3 effect_prev_velocity;
 
 	void _effect_changed();
+	void _attribute_list_changed();
 	void _update_transforms();
 	void _reset_transforms();
 };

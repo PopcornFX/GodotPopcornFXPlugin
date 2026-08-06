@@ -6,9 +6,11 @@
 
 #include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/engine.hpp"
+#include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/classes/main_loop.hpp"
 #include "godot_cpp/classes/project_settings.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
+#include "godot_cpp/classes/resource_loader.hpp"
 #include "godot_cpp/classes/scene_tree.hpp"
 #include "godot_cpp/classes/window.hpp"
 #include "godot_cpp/classes/world3d.hpp"
@@ -22,6 +24,7 @@
 #include "core/pk_dft.h"
 #include "core/samplers/pk_attribute_sampler_audio.h"
 #include "editor/inspect/pk_inspector_plugin.h"
+#include "integration/engine/pk_file_system_controller.h"
 #include "integration/internal/pk_project_settings.h"
 #include "integration/internal/pk_scene.h"
 #include "integration/pk_plugin.h"
@@ -106,38 +109,45 @@ const Viewport *PKManager::_get_viewport() const {
 TMemoryView<const float *const> PKManager::get_waveform(CStringId p_channel_group, u32 &r_base_count) const {
 	const uint32_t id = p_channel_group.Id();
 
-	PK_SCOPEDLOCK(audiosampling_lock);
+	audiosampling_lock->lock();
 	if (cached_audio_waveform_buffers.has(id)) {
 		const AudioBufferDescriptor &desc = cached_audio_waveform_buffers.get(id);
 
 		if (!desc.is_up_to_date) {
 			r_base_count = 0;
+			audiosampling_lock->unlock();
 			return TMemoryView<const float *const>();
 		}
 		r_base_count = AUDIO_BUFFER_SIZE;
+		audiosampling_lock->unlock();
 		return TMemoryView<const float *const>(desc.pyramid.ptr(), desc.pyramid.size());
 	}
 	// if not found (should not happen normally after the first few init frames)
 	r_base_count = 0;
+
+	audiosampling_lock->unlock();
 	return TMemoryView<const float *const>();
 }
 
 TMemoryView<const float *const> PKManager::get_spectrum(CStringId p_channel_group, u32 &r_base_count) const {
 	const uint32_t id = p_channel_group.Id();
 
-	PK_SCOPEDLOCK(audiosampling_lock);
+	audiosampling_lock->lock();
 	if (cached_audio_spectrum_buffers.has(id)) {
 		const AudioBufferDescriptor &desc = cached_audio_spectrum_buffers.get(id);
 
 		if (!desc.is_up_to_date) {
 			r_base_count = 0;
+			audiosampling_lock->unlock();
 			return TMemoryView<const float *const>();
 		}
 		r_base_count = AUDIO_BUFFER_SIZE;
+		audiosampling_lock->unlock();
 		return TMemoryView<const float *const>(desc.pyramid.ptr(), desc.pyramid.size());
 	}
 	// if not found (should not happen normally after the first few init frames)
 	r_base_count = 0;
+	audiosampling_lock->unlock();
 	return TMemoryView<const float *const>();
 }
 
@@ -234,6 +244,19 @@ void PKManager::render() {
 	PKPlugin::get_singleton()->render(scenario_id);
 }
 
+Node3D *godot::PKManager::get_current_audio_listener_3D() { // TODO modify when 2D
+	Node3D *res = reinterpret_cast<Node3D *>(_get_viewport()->get_audio_listener_3d());
+	if (!res) {
+		res = reinterpret_cast<Node3D *>(_get_viewport()->get_camera_3d());
+	}
+	return res;
+}
+
+Node *PKManager::find_suitable_parent_for_audio_pool_sources() {
+	// for now just take the manager. It may need to change in the future (ex if using multiple worlds).
+	return reinterpret_cast<Node *>(this);
+}
+
 PKManager::~PKManager() {
 	if (singleton) {
 		if (singleton == this) {
@@ -245,7 +268,7 @@ PKManager::~PKManager() {
 }
 
 void PKManager::_update_audio_buffers() {
-	PK_SCOPEDLOCK(audiosampling_lock);
+	audiosampling_lock->lock();
 
 	constexpr uint32_t pyramid_size = get_total_pyramid_size(AUDIO_BUFFER_SIZE);
 
@@ -258,7 +281,7 @@ void PKManager::_update_audio_buffers() {
 
 	const uint32_t waveform_sampler_count = PKAttributeSamplerAudio::get_waveform_sampler_count();
 	// We iterate on the samplers, and ask them to fill the buffer using their data source.
-	// TODO One problem with that is that if two instances have the same effect, the audio will be added twice to the channel. I think it makes sense this way, but it may be annoying to use. To discuss
+	// Note : If two instances have the same effect, the audio will be added twice to the channel
 	for (uint32_t i = 0; i < waveform_sampler_count; ++i) {
 		const PKAttributeSamplerAudio *sampler = PKAttributeSamplerAudio::get_waveform_sampler(i);
 
@@ -338,12 +361,12 @@ void PKManager::_update_audio_buffers() {
 		// Finally, write up the data inside of the first layer (with an offset for the border)
 		// We get the waveforms. We'll do the fft on the sum.
 		if (sampler->capture_waveform(desc.data_ptr() + 2, AUDIO_BUFFER_SIZE)) {
-			// At least one sampler feeds into it, so set it to updated so the get_ functions know they can take this one
+			// At least one sampler feeds into it, so set it to updated so the get_ functions know they can take this one.
 			desc.is_up_to_date = true;
 		}
 	}
 
-	// Once we have accumulated all the audio that we need, we can build the pyramid. Remove the buffers we didnt use
+	// Once we have accumulated all the audio that we need, we can build the pyramid. Remove the buffers we didnt use.
 	for (KeyValue<uint32_t, AudioBufferDescriptor> &v : cached_audio_spectrum_buffers) {
 		AudioBufferDescriptor &desc = v.value;
 		// if this desc has data
@@ -367,6 +390,7 @@ void PKManager::_update_audio_buffers() {
 			build_audio_pyramid(data_ptr, desc.pyramid, AUDIO_BUFFER_SIZE);
 		}
 	}
+	audiosampling_lock->unlock();
 }
 
 void PKManager::_add_setting_ifn(Variant::Type p_type, const String &p_name, PropertyHint p_hint, const char *p_hint_string, Variant p_default_value, bool p_requires_restart, bool p_is_internal) {
@@ -388,13 +412,17 @@ void PKManager::_add_setting_ifn(Variant::Type p_type, const String &p_name, Pro
 
 void PKManager::_update_settings() {
 #if TOOLS_ENABLED
+	// Runtime
 	_add_setting_ifn(Variant::INT, "popcornfx/runtime/default_emitter_transform_mode", PROPERTY_HINT_ENUM, "Global,Local", 0, true, false);
+	_add_setting_ifn(Variant::INT, "popcornfx/runtime/max_audio_sources_count_per_clip", PROPERTY_HINT_RANGE, "0, 64", 8, false, false);
+	// Editor
 	_add_setting_ifn(Variant::STRING, "popcornfx/editor/source_pack", PROPERTY_HINT_FILE, "*.pkproj", "res://", true, false);
 	_add_setting_ifn(Variant::BOOL, "popcornfx/editor/debug_baked_effects", PROPERTY_HINT_NONE, "", false, true, false);
+	// Export
 	_add_setting_ifn(Variant::BOOL, "popcornfx/export/raw_export_dependencies", PROPERTY_HINT_NONE, "", true, false, false);
+	// Internal
 	_add_setting_ifn(Variant::STRING, "popcornfx/internal/source_pack_root", PROPERTY_HINT_NONE, "", "", false, true);
 #endif
-
 	ProjectSettings *settings = ProjectSettings::get_singleton();
 	PKPlugin *pkfx_plugin = PKPlugin::get_singleton();
 	SPopcornFXProjectSettings pkfx_settings;

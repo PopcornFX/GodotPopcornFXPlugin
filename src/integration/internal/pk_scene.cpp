@@ -62,6 +62,10 @@ Pair<RID, bool> &PKScene::get_or_create_visual_instance(RID p_mesh_rid) {
 	return visual_instances.insert(p_mesh_rid, { new_instance, false })->value;
 }
 
+void PKScene::set_sound_instance_rendered(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr) {
+	sound_instances[p_audio_pool_ptr] = true;
+}
+
 void PKScene::clear_visual_instance(RID p_mesh_rid) {
 	const auto found = visual_instances.find(p_mesh_rid);
 	if (found == visual_instances.end()) {
@@ -72,6 +76,12 @@ void PKScene::clear_visual_instance(RID p_mesh_rid) {
 	rs->free_rid(found->value.first);
 
 	visual_instances.erase(p_mesh_rid);
+}
+
+void PKScene::clear_sound_instance(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr) {
+	if (sound_instances.has(p_audio_pool_ptr)) {
+		sound_instances.erase(p_audio_pool_ptr);
+	}
 }
 
 void PKScene::update(float p_delta_time, CFloat4x4 &p_mat_wv, CFloat4x4 &p_mat_wvp) {
@@ -115,14 +125,25 @@ void PKScene::RayTracePacket(const Colliders::STraceFilter &p_trace_filter, cons
 void PKScene::_post_update_instances() {
 	RenderingServer *rs = RenderingServer::get_singleton();
 
+	// Visual instances
 	for (auto it = visual_instances.begin(); it != visual_instances.end(); ++it) {
 		if (it->value.second) {
 			it->value.second = false;
-			continue;
+		} else {
+			// Batch drawer stopped updating: stop rendering it
+			rs->instance_set_scenario(it->value.first, RID());
 		}
+	}
 
-		// Batch drawer stopped updating: stop rendering it
-		rs->instance_set_scenario(it->value.first, RID());
+	// Sound pools
+	for (auto it = sound_instances.begin(); it != sound_instances.end(); ++it) {
+		if (it->value) {
+			it->value = false;
+			continue;
+		} else {
+			// Batch drawer stopped updating: stop rendering it
+			it->key->release_all();
+		}
 	}
 }
 

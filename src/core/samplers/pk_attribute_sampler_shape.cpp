@@ -14,6 +14,7 @@
 #include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/sphere_shape3d.hpp"
 
+#include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_error_handling.h"
 #include "integration/pk_plugin_types.h"
 
@@ -43,6 +44,7 @@ void PKAttributeSamplerShape::update_transforms() {
 		shape_desc->m_WorldTr_Current = nullptr;
 		shape_desc->m_WorldTr_Previous = nullptr;
 	} else if (transform_mode == TRANSFORM_PARENT) {
+		ERR_FAIL_NULL(parent);
 		SSpawnTransformsPack pack = parent->get_transform_pack();
 		shape_desc->m_WorldTr_Current = pack.m_WorldTr_Current;
 		shape_desc->m_WorldTr_Previous = pack.m_WorldTr_Previous;
@@ -91,7 +93,7 @@ void PKAttributeSamplerShape::set_transform_mode(TransformMode p_transform_mode)
 
 void PKAttributeSamplerShape::set_sample_mode(SampleMode p_sample_mode) {
 	if (p_sample_mode == SAMPLE_SHAPE) {
-		_set_node(nullptr);
+		set_node_path("");
 	}
 	if (p_sample_mode != SAMPLE_NODE && transform_mode == TRANSFORM_NODE) {
 		set_transform_mode(TRANSFORM_NONE);
@@ -141,6 +143,13 @@ void PKAttributeSamplerShape::_changed() {
 		set_shape(node->get_mesh());
 		return;
 	}
+	if (shape.is_null()) {
+		if (desc != nullptr) {
+			desc = nullptr;
+			_changed();
+		}
+		return;
+	}
 	if (shape->is_class(BoxShape3D::get_class_static())) {
 		const Ref<BoxShape3D> box = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Box(to_pk(box->get_size())));
@@ -154,8 +163,7 @@ void PKAttributeSamplerShape::_changed() {
 		const Ref<SphereShape3D> sphere = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Sphere(sphere->get_radius()));
 	} else if (shape->is_class(ConvexPolygonShape3D::get_class_static()) ||
-			shape->is_class(ConcavePolygonShape3D::get_class_static()) ||
-			shape->is_class(Mesh::get_class_static())) {
+			shape->is_class(ConcavePolygonShape3D::get_class_static())) {
 		const Ref<ConvexPolygonShape3D> convex = shape;
 		if (convex.is_valid()) {
 			const Ref<ArrayMesh> mesh = convex->get_debug_mesh(); // Despite its name, this is not editor-only and seems like the proper function to retrieve the mesh data
@@ -178,22 +186,11 @@ void PKAttributeSamplerShape::_changed() {
 			for (int i = 0; i < mesh_vertices.size(); i++) {
 				mesh_indices[i] = i;
 			}
-		} else {
-			const Ref<Mesh> mesh = shape;
-			Array array;
-			for (int i = 0; i < mesh->get_surface_count(); i++) {
-				Dictionary surface = RenderingServer::get_singleton()->mesh_get_surface(mesh->get_rid(), i);
-				if (int(surface["primitive"]) == Mesh::PRIMITIVE_TRIANGLES) {
-					array = mesh->surface_get_arrays(i);
-					break;
-				}
-			}
-			if (array.size() == 0) {
-				ERR_FAIL_MSG("PKAttributeSamplerShape: given mesh does not contain a triangles surface.");
-			}
+		}
 
-			mesh_vertices = PackedVector3Array(array[Mesh::ARRAY_VERTEX]);
-			mesh_indices = PackedInt32Array(array[Mesh::ARRAY_INDEX]);
+		CShapeDescriptor_Mesh *desc = PK_NEW(CShapeDescriptor_Mesh);
+		if (!PKGD_VERIFY(desc != nullptr)) {
+			return;
 		}
 
 		const int vertex_count = mesh_vertices.size();
@@ -201,10 +198,6 @@ void PKAttributeSamplerShape::_changed() {
 		ERR_FAIL_COND_MSG(vertex_count == 0, "PKAttributeSamplerShape: given mesh has invalid vertex buffer.");
 		ERR_FAIL_COND_MSG(index_count == 0, "PKAttributeSamplerShape: given mesh has invalid index buffer.");
 
-		CShapeDescriptor_Mesh *desc = PK_NEW(CShapeDescriptor_Mesh);
-		if (!PKGD_VERIFY(desc != nullptr)) {
-			return;
-		}
 		SMeshProxy proxy;
 		proxy.m_PrimitiveType = CMeshIStream::Triangles;
 		proxy.m_IndexFormat = CMeshIStream::U32Indices;
@@ -216,6 +209,23 @@ void PKAttributeSamplerShape::_changed() {
 
 		_setup_mesh_runtime_structs(desc);
 
+		shape_desc = desc;
+	} else if (shape->is_class(Mesh::get_class_static())) {
+		RenderingServer *rs = RenderingServer::get_singleton();
+		if (!rs->is_on_render_thread()) {
+			// Delay updating, we'll need to be on the rendering server thread to be able to load the mesh.
+			rs->call_on_render_thread(callable_mp(this, &PKAttributeSamplerShape::_changed));
+			return;
+		}
+		mesh_resource = PKResourceHandlerMesh::new_from_gd_meshes({ { shape, Transform3D() } });
+		if (!PKGD_VERIFY(mesh_resource != nullptr)) {
+			return;
+		}
+		ERR_FAIL_COND_MSG(mesh_resource->BatchList().Count() == 0, "PKAttributeSamplerShape: loaded mesh is empty.");
+		CShapeDescriptor_Mesh *desc = PK_NEW(CShapeDescriptor_Mesh(mesh_resource->BatchList()[0]->RawMesh()));
+		if (!PKGD_VERIFY(desc != nullptr)) {
+			return;
+		}
 		shape_desc = desc;
 	} else {
 		ERR_FAIL_MSG(vformat("Could not create PKAttributeSamplerShape from shape %s", shape->get_class()));
@@ -233,7 +243,7 @@ void PKAttributeSamplerShape::_disconnect_changed() {
 }
 
 void PKAttributeSamplerShape::_physics_process() {
-	if (node != nullptr) {
+	if (node != nullptr && node->is_inside_tree()) {
 		node_global_transform_previous = node_global_transform;
 		node_global_transform = to_pk(node->get_global_transform());
 	}

@@ -4,12 +4,14 @@
 //----------------------------------------------------------------------------
 #pragma once
 
+#include "godot_cpp/classes/audio_stream.hpp"
 #include "godot_cpp/classes/world3d.hpp"
 #include "godot_cpp/templates/hash_map.hpp"
 #include "godot_cpp/variant/rid.hpp"
 
 #include "integration/pk_sdk.h"
 
+#include "core/pk_audio_player_pool.h"
 #include "core/pk_shader_material.h"
 
 #include <pk_particles/include/ps_scene.h>
@@ -32,7 +34,10 @@ public:
 	void clear_shader_material(const CRendererDataBase *p_renderer);
 
 	Pair<RID, bool> &get_or_create_visual_instance(RID p_mesh_rid);
+	void set_sound_instance_rendered(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
+
 	void clear_visual_instance(RID p_mesh_rid);
+	void clear_sound_instance(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
 
 	void update(float p_delta_time, CFloat4x4 &p_mat_wv, CFloat4x4 &p_mat_wvp);
 
@@ -48,4 +53,6 @@ private:
 	TArray<SSceneView> scene_views;
 	HashMap<const CRendererDataBase *, PKShaderMaterial> shader_materials;
 	HashMap<RID, Pair<RID, bool>> visual_instances; // Key: mesh RID, Value: visual_instance RID & rendered_this_frame bool
+	HashMap<PKAudioPlayerPool<AudioStreamPlayer3D> *, bool> sound_instances; // Key: audio_pool ptr, Value: rendered_this_frame bool
+	// TODO modify when 2D
 };

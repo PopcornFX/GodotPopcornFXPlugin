@@ -27,7 +27,7 @@ public:
 	};
 
 	PKAttributeSamplerAudio();
-	PKAttributeSamplerAudio(const PopcornFX::CResourceDescriptor *p_resource_desc);
+	PKAttributeSamplerAudio(const CResourceDescriptor *p_resource_desc);
 	~PKAttributeSamplerAudio();
 
 	static _FORCE_INLINE_ const PKAttributeSamplerAudio *get_waveform_sampler(const uint32_t p_n) { return waveform_samplers[p_n]; }

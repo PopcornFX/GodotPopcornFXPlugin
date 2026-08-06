@@ -17,8 +17,11 @@
 #include "core/pk_effect.h"
 #include "core/pk_string_names.h"
 #include "core/samplers/pk_attribute_sampler_audio.h"
+#include "core/samplers/pk_attribute_sampler_curve.h"
 #include "core/samplers/pk_attribute_sampler_image.h"
 #include "core/samplers/pk_attribute_sampler_shape.h"
+#include "integration/internal/pk_resource_handler_image.h"
+#include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_plugin.h"
 #include "pk_manager.h"
 #include "scene/pk_emitter_3d.h"
@@ -42,10 +45,14 @@ void initialize_popcornfx_module(ModuleInitializationLevel p_level) {
 		PKPlugin::create_singleton();
 		PKStringNames::create_singleton();
 
+		ClassDB::register_class<PKResourceMeshEntry>();
+		ClassDB::register_class<PKResourceImageEntry>();
+
 		ClassDB::register_class<PKAttributeSampler>();
 		ClassDB::register_class<PKAttributeSamplerShape>();
 		ClassDB::register_class<PKAttributeSamplerImage>();
 		ClassDB::register_class<PKAttributeSamplerAudio>();
+		ClassDB::register_class<PKAttributeSamplerCurve>();
 		ClassDB::register_class<PKAudioEffectCapture>();
 		ClassDB::register_class<PKAudioEffectCaptureInstance>();
 		ClassDB::register_class<PKAttributeList>();

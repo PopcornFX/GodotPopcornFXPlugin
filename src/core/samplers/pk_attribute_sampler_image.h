@@ -21,7 +21,6 @@ class PKAttributeSamplerImage : public PKAttributeSampler {
 
 public:
 	PKAttributeSamplerImage() = default;
-	PKAttributeSamplerImage(const PopcornFX::CResourceDescriptor *);
 	~PKAttributeSamplerImage();
 
 	Ref<Texture2D> get_image_resource() const { return image_resource; }

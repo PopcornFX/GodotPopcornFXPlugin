@@ -59,8 +59,8 @@ CImage *PKResourceHandlerImage::new_from_gd_img(const Ref<Image> p_image) {
 
 	CImage *new_image = PK_NEW(CImage);
 	if (!PK_VERIFY(new_image != nullptr) ||
-		!PK_VERIFY(new_image->m_Frames.Resize(1)) ||
-		!PK_VERIFY(new_image->m_Frames[0].m_Mipmaps.Resize(1))) {
+			!PK_VERIFY(new_image->m_Frames.Resize(1)) ||
+			!PK_VERIFY(new_image->m_Frames[0].m_Mipmaps.Resize(1))) {
 		PK_DELETE(new_image);
 		return nullptr;
 	}
@@ -70,7 +70,7 @@ CImage *PKResourceHandlerImage::new_from_gd_img(const Ref<Image> p_image) {
 	return new_image;
 }
 
-CImage *PKResourceHandlerImage::new_from_gd_resource(const Ref<Resource> p_image_resource) {
+CImage *PKResourceHandlerImage::new_from_gd_resource(const Ref<Resource> p_image_resource, Ref<PKResourceImageEntry> &r_entry) {
 	if (!p_image_resource->is_class(Texture2D::get_class_static())) {
 		return nullptr;
 	}
@@ -83,8 +83,14 @@ CImage *PKResourceHandlerImage::new_from_gd_resource(const Ref<Resource> p_image
 		const Ref<NoiseTexture2D> noise = p_image_resource;
 		img = noise->get_image(); // get_image() is overriden for this class
 	} else {
-		const Ref<Texture2D> texture = p_image_resource;
-		img = RenderingServer::get_singleton()->texture_2d_get(texture->get_rid());
+		if (r_entry.is_null()) {
+			r_entry.instantiate();
+		}
+		r_entry->pk_image = PK_NEW(CImage);
+		r_entry->gd_texture = p_image_resource;
+		RenderingServer::get_singleton()->call_on_render_thread(callable_mp_static(&PKResourceHandlerImage::_deferred_update_image).bind(r_entry));
+
+		return r_entry->pk_image.Get();
 	}
 
 	if (!img.is_valid()) {
@@ -169,8 +175,8 @@ void *PKResourceHandlerImage::Load(
 	}
 
 	ResourceLoader *rl = ResourceLoader::get_singleton();
-	const Ref<Texture2D> texture_resource = rl->load(godot_path, String("Texture2D"), ResourceLoader::CACHE_MODE_REUSE);
-	if (!texture_resource.is_valid()) {
+	const Ref<Texture2D> gd_texture = rl->load(godot_path, String("Texture2D"), ResourceLoader::CACHE_MODE_REUSE);
+	if (!gd_texture.is_valid()) {
 		if (p_async_load_status != nullptr) {
 			p_async_load_status->m_Resource = nullptr;
 			p_async_load_status->m_Done = true;
@@ -179,14 +185,23 @@ void *PKResourceHandlerImage::Load(
 		ERR_FAIL_V_MSG(nullptr, vformat("Can't load texture resource '%s'", godot_path));
 	}
 
-	CImage *resource = new_from_gd_resource(texture_resource);
+	Ref<PKResourceImageEntry> entry = memnew(PKResourceImageEntry);
+	CImage *pk_image = new_from_gd_resource(gd_texture, entry);
+	if (pk_image == nullptr) {
+		pk_image = PK_NEW(CImage);
+	}
+	if (entry->pk_image == nullptr) {
+		entry->pk_image = pk_image;
+		entry->gd_texture = gd_texture;
+	}
+	_connect_reload_signal(entry);
 
 	if (p_async_load_status != nullptr) {
-		p_async_load_status->m_Resource = resource;
+		p_async_load_status->m_Resource = pk_image;
 		p_async_load_status->m_Done = true;
 		p_async_load_status->m_Progress = 1.0f;
 	}
-	return resource;
+	return pk_image;
 }
 
 void *PKResourceHandlerImage::Load(
@@ -230,5 +245,35 @@ void PKResourceHandlerImage::AppendDependencies(
 		const CFilePackPath &p_resource_path,
 		TArray<CString> &r_resource_paths) const {
 	PKGD_ASSERT(p_resource_type_id == TResourceRouter<CImage>::ResourceTypeID());
+}
+
+void PKResourceHandlerImage::_deferred_update_image(const Ref<PKResourceImageEntry> p_entry) {
+	const Ref<Image> gd_image = RenderingServer::get_singleton()->texture_2d_get(p_entry->gd_texture->get_rid());
+	ERR_FAIL_COND(gd_image.is_null());
+
+	CImage *new_image = new_from_gd_img(gd_image);
+	CImage *dst_image = p_entry->pk_image.Get();
+
+	dst_image->m_OnReloading(dst_image);
+	if (new_image != nullptr) {
+		dst_image->m_Flags = new_image->m_Flags;
+		dst_image->m_Format = new_image->m_Format;
+		PKSwap(dst_image->m_Frames, new_image->m_Frames);
+		PKSwap(dst_image->m_DensityRecords, new_image->m_DensityRecords);
+	} else {
+		dst_image->Clear();
+	}
+
+	dst_image->m_OnReloaded(dst_image);
+}
+
+void PKResourceHandlerImage::_connect_reload_signal(Ref<PKResourceImageEntry> p_entry) {
+	const Callable callable = callable_mp_static(PKResourceHandlerImage::_deferred_update_image).bind(p_entry);
+	if (p_entry->gd_texture->is_connected("changed", callable)) {
+		p_entry->gd_texture->disconnect("changed", callable); // reconnect to update the entry parameter
+	}
+
+	// Use deferred connection, popcorn may reload the image when told it was changed, causing a ResourceLoader assert to pop up when trying to load the mesh currently being reimported
+	p_entry->gd_texture->connect("changed", callable, Object::CONNECT_DEFERRED);
 }
 } // namespace godot
