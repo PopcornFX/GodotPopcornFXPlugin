@@ -4,8 +4,11 @@
 //----------------------------------------------------------------------------
 #include "pk_renderer_cache.h"
 
+#include "godot_cpp/classes/project_settings.hpp"
+
 #include "integration/internal/pk_scene.h"
 #include "integration/pk_plugin.h"
+#include "pk_manager.h"
 
 #include <pk_render_helpers/include/render_features/rh_features_basic.h>
 
@@ -118,6 +121,45 @@ Ref<Texture2DRD> PKRendererCache::get_atlas_rects_srv() const {
 	return atlas_rects.get_srv();
 }
 
+bool PKRendererCacheAudio::setup_renderer_sound(const CRendererDataSound *p_renderer) {
+	return PKGD_VERIFY(material_desc_sound.init_from_renderer(*p_renderer));
+}
+
+bool PKRendererCacheAudio::operator==(const PKRendererCacheAudio &p_other) const {
+	return material_desc_sound == p_other.material_desc_sound;
+}
+
+PKRendererCacheAudio::~PKRendererCacheAudio() {
+	PKScene *scene = PKPlugin::get_singleton()->get_scene();
+	if (scene != nullptr) { // when shutting down, the scene is destroyed before the renderer caches
+		scene->clear_sound_instance(&material_desc_sound.pool);
+	}
+}
+
+void PKRendererCacheAudio::UpdateThread_BuildBillboardingFlags(const PRendererDataBase &p_renderer) {
+}
+
 bool PKRendererCache::operator==(const PKRendererCache &p_other) const {
 	return true;
+}
+
+bool PKParticleMaterialDescSound::init_from_renderer(const CRendererDataSound &p_renderer) {
+	PKGD_ASSERT(p_renderer.m_RendererType == Renderer_Sound);
+	const ProjectSettings *settings = ProjectSettings::get_singleton();
+	PKManager *manager = PKManager::get_singleton();
+
+	const SRendererFeaturePropertyValue *renderer_sound_data_path = p_renderer.m_Declaration.FindProperty(BasicRendererProperties::SID_Sound_SoundData());
+	if (renderer_sound_data_path != null && !renderer_sound_data_path->ValuePath().Empty()) {
+		sound_path = String(renderer_sound_data_path->ValuePath().Data());
+	}
+	const uint32_t max_audio_source_count = settings->get_setting("popcornfx/runtime/max_audio_sources_count_per_clip");
+	pool.resize(max_audio_source_count);
+
+	pool.set_sources_parent(manager->find_suitable_parent_for_audio_pool_sources()); // TODO modify when 2D
+
+	return true;
+}
+
+bool PKParticleMaterialDescSound::operator==(const PKParticleMaterialDescSound &p_other) const {
+	return sound_path == p_other.sound_path;
 }

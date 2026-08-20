@@ -5,6 +5,7 @@
 #pragma once
 
 #include "godot_cpp/classes/file_access.hpp"
+#include "godot_cpp/classes/resource_loader.hpp"
 
 #include "integration/pk_sdk.h"
 
@@ -67,6 +68,18 @@ public:
 	String sanitize_path(const CString &p_path, bool p_pk_virtual);
 	const String &get_source_pack_root_dir() const { return cached_source_pack_root_dir; }
 	void set_source_pack_root_dir(const String &p_dir) { cached_source_pack_root_dir = p_dir; }
+
+	template <typename T>
+	Ref<T> load_resource_from_virtual_path(const String &p_path) {
+		const String full_path = sanitize_path(p_path, true);
+
+		Ref<T> loaded = ResourceLoader::get_singleton()->load(full_path);
+
+		if (loaded == nullptr) {
+			ERR_PRINT("Couldn't load resource : '" + full_path + "'.");
+		}
+		return loaded;
+	}
 
 private:
 	String cached_source_pack_root_dir;

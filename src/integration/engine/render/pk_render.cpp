@@ -11,10 +11,10 @@ PKRender::~PKRender() {
 void PKRender::init(CParticleMediumCollection *p_medium_collection) {
 	const uint32_t enabled_renderers = (1U << ERendererClass::Renderer_Billboard) |
 			(1U << ERendererClass::Renderer_Ribbon) |
-			(1U << ERendererClass::Renderer_Mesh); /*|
+			(1U << ERendererClass::Renderer_Mesh) |
+			(1U << ERendererClass::Renderer_Sound); /*|
 			(1U << ERendererClass::Renderer_Light) |
-			(1U << ERendererClass::Renderer_Decal) |
-			(1U << ERendererClass::Renderer_Sound)*/
+			(1U << ERendererClass::Renderer_Decal) | */
 	;
 
 	CFrameCollector::SFrameCollectorInit init(enabled_renderers,

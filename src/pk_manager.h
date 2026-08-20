@@ -5,7 +5,9 @@
 #pragma once
 
 #include "godot_cpp/classes/editor_plugin.hpp"
+#include "godot_cpp/classes/mutex.hpp"
 
+#include "core/pk_audio_player_pool.h"
 #include "integration/pk_sdk.h"
 
 #include <pk_kernel/include/kr_memoryviews.h>
@@ -13,8 +15,6 @@
 #include <pk_kernel/include/kr_threads_basics.h>
 
 namespace godot {
-
-class PKEmitter3D;
 
 class PKManager : public Node {
 	GDCLASS(PKManager, Node)
@@ -45,12 +45,19 @@ public:
 	TMemoryView<const float *const> get_waveform(CStringId p_channel_group, u32 &r_base_count) const;
 	TMemoryView<const float *const> get_spectrum(CStringId p_channel_group, u32 &r_base_count) const;
 
+	Node3D *get_current_audio_listener_3D();
+
+	// Audio renderers
+	Node *find_suitable_parent_for_audio_pool_sources();
+
 	~PKManager();
 
 protected:
 	static PKManager *singleton;
 
 	static void _bind_methods();
+
+	// Audio samplers
 	void _update_audio_buffers();
 
 	void _add_setting_ifn(Variant::Type p_type, const String &p_name, PropertyHint p_hint, const char *p_hint_string, Variant p_default_value, bool p_requires_restart, bool p_is_internal);
@@ -61,11 +68,17 @@ protected:
 
 private:
 	const Viewport *_get_viewport() const;
-	Threads::CCriticalSection audiosampling_lock;
+
+	// Audio samplers
+
+	mutable Ref<Mutex> audiosampling_lock = memnew(Mutex);
 
 	// since CStringId is not usable inside a hashmap, we use its underlying numeric ID.
 	HashMap<uint32_t, AudioBufferDescriptor> cached_audio_waveform_buffers;
 	HashMap<uint32_t, AudioBufferDescriptor> cached_audio_spectrum_buffers;
+
+	// Audio renderers
+	HashMap<String, Ref<AudioStream>> sound_loaded;
 };
 
 } //namespace godot
