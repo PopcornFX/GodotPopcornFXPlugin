@@ -27,8 +27,15 @@ Variant::Type pk_type_to_gd_type(EBaseTypeID p_pk_type, EDataSemantic p_semantic
 		case BaseType_Int2:
 			return Variant::VECTOR2I;
 		case BaseType_Int3:
+			if (p_semantic == DataSemantic_Color) {
+				r_hint_type = PROPERTY_HINT_COLOR_NO_ALPHA;
+				return Variant::COLOR;
+			}
 			return Variant::VECTOR3I;
 		case BaseType_Int4:
+			if (p_semantic == DataSemantic_Color) {
+				return Variant::COLOR;
+			}
 			return Variant::VECTOR4I;
 
 		case BaseType_Float:

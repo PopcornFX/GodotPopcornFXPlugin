@@ -21,7 +21,9 @@ namespace godot {
 
 PKAttributeDesc::PKAttributeDesc() :
 		// Explicit initializer list because Godot skips default values when (de)serialising, leading to garbage values.
-		name(""), index(0), type(0), semantic(0), uid(CGuid::INVALID), default_value(PackedByteArray()) {}
+		name(""), index(0), type(0), semantic(0), uid(CGuid::INVALID), default_value(PackedByteArray()) {
+	set_local_to_scene(true);
+}
 
 PKAttributeDesc *PKAttributeDesc::from_declaration(const CParticleAttributeDeclaration *p_declaration, int p_index) {
 	PKAttributeDesc *desc = memnew(PKAttributeDesc);
@@ -56,7 +58,9 @@ void PKAttributeDesc::_bind_methods() {
 
 PKAttributeSamplerDesc::PKAttributeSamplerDesc() :
 		// Explicit initializer list because Godot skips default values when (de)serialising, leading to garbage values.
-		type(0), index(0), uid(CGuid::INVALID), name("") {}
+		type(0), index(0), uid(CGuid::INVALID), name("") {
+	set_local_to_scene(true);
+}
 
 PKAttributeSamplerDesc *PKAttributeSamplerDesc::from_declaration(const CParticleAttributeSamplerDeclaration *p_declaration, int p_index) {
 	PKAttributeSamplerDesc *desc = memnew(PKAttributeSamplerDesc);
@@ -88,16 +92,16 @@ void PKAttributeList::set_emitter(PKEmitter3D *p_emitter) {
 }
 
 void PKAttributeList::set_attribute_samplers(TypedArray<PKAttributeSampler> p_attribute_samplers) {
-	attribute_samplers = p_attribute_samplers;
-	for (int i = 0; i < p_attribute_samplers.size(); i++) {
-		Ref<PKAttributeSampler> sampler = p_attribute_samplers[i];
-		if (!sampler.is_valid()) {
-			if (!PKGD_VERIFY(i < effect->get_effect()->GetAttributeSamplerCount())) {
-				continue;
-			}
-			sampler = create_default_sampler(effect->get_effect()->GetAttributeSamplerDecl(i));
-		}
-		set_attribute_sampler_raw(i, sampler);
+	if (!PKGD_VERIFY(effect.is_valid() && effect->get_effect() != nullptr)) {
+		return;
+	}
+	for (int i = 0; i < attribute_samplers.size(); i++) {
+		_disconnect_attribute_sampler(i, attribute_samplers[i]);
+	}
+	attribute_samplers.resize(effect->get_effect()->GetAttributeSamplerCount());
+	int samplers_copy_count = MIN(effect->get_effect()->GetAttributeSamplerCount(), p_attribute_samplers.size());
+	for (int i = 0; i < samplers_copy_count; i++) {
+		set_attribute_sampler_raw(i, p_attribute_samplers[i]);
 	}
 }
 
@@ -112,6 +116,7 @@ const SAttributesContainer_SAttrib *PKAttributeList::attribute_raw_data() const 
 PKAttributeList::PKAttributeList() {
 	emitter = nullptr;
 	attribute_samplers = TypedArray<PKAttributeSampler>();
+	set_local_to_scene(true);
 }
 
 Ref<PKAttributeList> PKAttributeList::default_for_emitter(PKEmitter3D *p_emitter) {
@@ -203,30 +208,24 @@ Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc_by_uid(u
 }
 
 CParticleAttributeList::_TypeOfAttributeAndSamplerList PKAttributeList::all_declarations() const {
-	if (effect.is_null()) {
-		return {};
-	}
+	CHECK_EFFECT_VALID({});
 	return effect->get_effect()->AttributeFlatList()->AttributeAndSamplerList();
 }
 
 TMemoryView<CParticleAttributeDeclaration *const> PKAttributeList::all_attribute_declarations() const {
-	if (effect.is_null()) {
-		return {};
-	}
+	CHECK_EFFECT_VALID({});
 	return effect->get_effect()->AttributeFlatList()->UniqueAttributeList();
 }
 
 TMemoryView<CParticleAttributeSamplerDeclaration *const> PKAttributeList::all_attribute_sampler_declarations() const {
-	if (effect.is_null()) {
-		return {};
-	}
+	CHECK_EFFECT_VALID({});
 	return effect->get_effect()->AttributeFlatList()->UniqueSamplerList();
 }
 
 void PKAttributeList::_bind_methods() {
 	BIND_BASIC_PROPERTY(PKAttributeList, OBJECT, effect, PROPERTY_HINT_RESOURCE_TYPE, "PKEffect", PROPERTY_USAGE_STORAGE);
 	BIND_BASIC_PROPERTY(PKAttributeList, ARRAY, attribute_descs, PROPERTY_HINT_ARRAY_TYPE, "PKAttributeDesc", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
-	BIND_BASIC_PROPERTY(PKAttributeList, PACKED_BYTE_ARRAY, attribute_data, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE);
+	BIND_BASIC_PROPERTY(PKAttributeList, PACKED_BYTE_ARRAY, attribute_data, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	BIND_BASIC_PROPERTY(PKAttributeList, ARRAY, attribute_sampler_descs, PROPERTY_HINT_ARRAY_TYPE, "PKAttributeSamplerDesc", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	BIND_BASIC_PROPERTY(PKAttributeList, ARRAY, attribute_samplers, PROPERTY_HINT_ARRAY_TYPE, "PKAttributeSampler", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	ClassDB::bind_method(D_METHOD("get_attribute", "name"), &PKAttributeList::get_attribute_variant);
@@ -262,6 +261,15 @@ PackedStringArray PKAttributeList::_get_configuration_warnings() const {
 		}
 	}
 	return warnings;
+}
+
+void PKAttributeList::_setup_local_to_scene() {
+	Resource::_setup_local_to_scene();
+	// Godot does not deep-duplicate arrays marked with PROPERTY_USAGE_ALWAYS_DUPLICATE. Do it here after our resource is initialised
+	// (we mark every attribute list and its members as local to scene so that it gets duplicated instead of ref'd when instantiating a scene with an emitter)
+	attribute_descs = attribute_descs.duplicate_deep();
+	attribute_sampler_descs = attribute_sampler_descs.duplicate_deep();
+	set_attribute_samplers(attribute_samplers.duplicate_deep());
 }
 
 bool attribs_match(const SAttributesContainer_SAttrib &p_a, const SAttributesContainer_SAttrib &p_b, int p_type, int p_dimension) {
@@ -386,7 +394,7 @@ bool PKAttributeList::get_attribute(const String &p_name, SAttributesContainer_S
 	CHECK_EFFECT_VALID(false);
 	const CGuid id = effect->get_effect()->GetAttributeID(p_name.utf8().ptr());
 	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
-	if (_check_instance_valid()) {
+	if (_is_instance_valid()) {
 		const Ref<PKAttributeDesc> desc = attribute_descs[id];
 		return emitter->effect_instance->GetRawAttribute(id, EBaseTypeID(desc->get_type()), &r_value);
 	}
@@ -436,12 +444,12 @@ Variant PKAttributeList::get_attribute_variant(const String &p_name) const {
 			return Vector2i(data.m_Data32i[0], data.m_Data32i[1]);
 		case PopcornFX::BaseType_Int3:
 			if (semantic == DataSemantic_Color) {
-				return Color::from_rgba8(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2]);
+				return Color::from_rgba8(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2]).linear_to_srgb();
 			}
 			return Vector3i(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2]);
 		case PopcornFX::BaseType_Int4:
 			if (semantic == DataSemantic_Color) {
-				return Color::from_rgba8(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2], data.m_Data32i[3]);
+				return Color::from_rgba8(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2], data.m_Data32i[3]).linear_to_srgb();
 			}
 			return Vector4i(data.m_Data32i[0], data.m_Data32i[1], data.m_Data32i[2], data.m_Data32i[3]);
 
@@ -451,12 +459,12 @@ Variant PKAttributeList::get_attribute_variant(const String &p_name) const {
 			return Vector2(data.m_Data32f[0], data.m_Data32f[1]);
 		case PopcornFX::BaseType_Float3:
 			if (semantic == DataSemantic_Color) {
-				return Color(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2]);
+				return Color(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2]).linear_to_srgb();
 			}
 			return Vector3(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2]);
 		case PopcornFX::BaseType_Float4:
 			if (semantic == DataSemantic_Color) {
-				return Color(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2], data.m_Data32f[3]);
+				return Color(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2], data.m_Data32f[3]).linear_to_srgb();
 			}
 			return Vector4(data.m_Data32f[0], data.m_Data32f[1], data.m_Data32f[2], data.m_Data32f[3]);
 
@@ -539,7 +547,7 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 		}
 		case PopcornFX::BaseType_Int3: {
 			if (semantic == DataSemantic_Color) {
-				const Color color = Color(p_value);
+				const Color color = Color(p_value).srgb_to_linear();
 				data.m_Data32i[0] = color.get_r8();
 				data.m_Data32i[1] = color.get_g8();
 				data.m_Data32i[2] = color.get_b8();
@@ -553,13 +561,13 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 		}
 		case PopcornFX::BaseType_Int4: {
 			if (semantic == DataSemantic_Color) {
-				const Color color = Color(p_value);
+				const Color color = Color(p_value).srgb_to_linear();
 				data.m_Data32i[0] = color.get_r8();
 				data.m_Data32i[1] = color.get_g8();
 				data.m_Data32i[2] = color.get_b8();
 				data.m_Data32i[3] = color.get_a8();
 			} else {
-				const Vector3i vec = Vector3i(p_value);
+				const Vector4i vec = Vector4i(p_value);
 				data.m_Data32i[0] = vec[0];
 				data.m_Data32i[1] = vec[1];
 				data.m_Data32i[2] = vec[2];
@@ -579,7 +587,7 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 		}
 		case PopcornFX::BaseType_Float3: {
 			if (semantic == DataSemantic_Color) {
-				const Color color = Color(p_value);
+				const Color color = Color(p_value).srgb_to_linear();
 				data.m_Data32f[0] = color[0];
 				data.m_Data32f[1] = color[1];
 				data.m_Data32f[2] = color[2];
@@ -593,7 +601,7 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 		}
 		case PopcornFX::BaseType_Float4: {
 			if (semantic == DataSemantic_Color) {
-				const Color color = Color(p_value);
+				const Color color = Color(p_value).srgb_to_linear();
 				data.m_Data32f[0] = color[0];
 				data.m_Data32f[1] = color[1];
 				data.m_Data32f[2] = color[2];
@@ -692,12 +700,13 @@ bool PKAttributeList::set_attribute_sampler_raw(uint32_t p_id, Ref<PKAttributeSa
 			return true; // Unsupported sampler
 		}
 	}
+	const Callable set_on_change = callable_mp(this, static_cast<bool (PKAttributeList::*)(uint32_t, Ref<PKAttributeSampler>)>(&PKAttributeList::set_attribute_sampler)).bind(p_sampler).bind(p_id);
+	const Callable emit_changed_on_change = callable_mp(static_cast<Resource *>(this), &PKAttributeList::emit_changed);
+	_disconnect_attribute_sampler(p_id, attribute_samplers[p_id]);
+	_connect_attribute_sampler(p_id, p_sampler);
+	p_sampler->set_emitter(emitter);
 	attribute_samplers[p_id] = p_sampler;
-	const Callable on_change = callable_mp(this, static_cast<bool (PKAttributeList::*)(uint32_t, Ref<PKAttributeSampler>)>(&PKAttributeList::set_attribute_sampler)).bind(p_sampler).bind(p_id);
-	if (!p_sampler->is_connected("changed", on_change)) {
-		p_sampler->connect("changed", on_change);
-		p_sampler->connect("changed", callable_mp(static_cast<Resource *>(this), &PKAttributeList::emit_changed));
-	}
+
 	return true;
 }
 
@@ -763,7 +772,7 @@ bool PKAttributeList::_check_effect_valid() const {
 	return true;
 }
 
-bool PKAttributeList::_check_instance_valid() const {
+bool PKAttributeList::_is_instance_valid() const {
 	return emitter->get_effect_instance() != nullptr && emitter->get_effect_instance()->Alive();
 }
 
@@ -787,5 +796,29 @@ String PKAttributeList::_get_sampler_configuration_warnings(int p_sampler_id) co
 	}
 
 	return formatted;
+}
+
+void PKAttributeList::_connect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler) {
+	if (p_sampler.is_null()) {
+		return;
+	}
+	const Callable set_on_change = callable_mp(this, static_cast<bool (PKAttributeList::*)(uint32_t, Ref<PKAttributeSampler>)>(&PKAttributeList::set_attribute_sampler)).bind(p_sampler).bind(p_id);
+	const Callable emit_changed_on_change = callable_mp(static_cast<Resource *>(this), &PKAttributeList::emit_changed);
+	if (!p_sampler->is_connected("changed", set_on_change)) {
+		p_sampler->connect("changed", set_on_change);
+		p_sampler->connect("changed", emit_changed_on_change);
+	}
+}
+
+void PKAttributeList::_disconnect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler) {
+	if (p_sampler.is_null()) {
+		return;
+	}
+	const Callable set_on_change = callable_mp(this, static_cast<bool (PKAttributeList::*)(uint32_t, Ref<PKAttributeSampler>)>(&PKAttributeList::set_attribute_sampler)).bind(p_sampler).bind(p_id);
+	const Callable emit_changed_on_change = callable_mp(static_cast<Resource *>(this), &PKAttributeList::emit_changed);
+	if (p_sampler->is_connected("changed", set_on_change)) {
+		p_sampler->disconnect("changed", set_on_change);
+		p_sampler->disconnect("changed", emit_changed_on_change);
+	}
 }
 } // namespace godot

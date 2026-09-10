@@ -20,7 +20,9 @@ class PKAttributeSampler : public Resource {
 	friend class PKAttributeList;
 
 public:
-	PKAttributeSampler() = default;
+	PKAttributeSampler() {
+		set_local_to_scene(true);
+	}
 
 	virtual const PParticleSamplerDescriptor &get_sampler() { return desc; }
 	virtual void set_emitter(PKEmitter3D *p_emitter) { parent = p_emitter; }
