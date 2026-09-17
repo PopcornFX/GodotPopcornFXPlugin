@@ -138,6 +138,8 @@ public:
 	TMemoryView<CParticleAttributeDeclaration *const> all_attribute_declarations() const;
 	TMemoryView<CParticleAttributeSamplerDeclaration *const> all_attribute_sampler_declarations() const;
 
+	virtual void _setup_local_to_scene() override;
+
 protected:
 	static void _bind_methods();
 	void _physics_process();
@@ -147,9 +149,12 @@ protected:
 private:
 	static bool _check_type_matches(const Variant &p_variant, EBaseTypeID p_type);
 	bool _check_effect_valid() const;
-	bool _check_instance_valid() const;
+	bool _is_instance_valid() const;
 
 	String _get_sampler_configuration_warnings(int p_sampler_id) const;
+
+	void _connect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
+	void _disconnect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 
 	bool ready = false;
 };
