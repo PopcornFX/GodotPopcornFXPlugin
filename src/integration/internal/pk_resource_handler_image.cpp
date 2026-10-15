@@ -251,15 +251,12 @@ void PKResourceHandlerImage::_deferred_update_image(const Ref<PKResourceImageEnt
 	const Ref<Image> gd_image = RenderingServer::get_singleton()->texture_2d_get(p_entry->gd_texture->get_rid());
 	ERR_FAIL_COND(gd_image.is_null());
 
-	CImage *new_image = new_from_gd_img(gd_image);
+	const TRefPtr<CImage> new_image = new_from_gd_img(gd_image);
 	CImage *dst_image = p_entry->pk_image.Get();
 
 	dst_image->m_OnReloading(dst_image);
 	if (new_image != nullptr) {
-		dst_image->m_Flags = new_image->m_Flags;
-		dst_image->m_Format = new_image->m_Format;
-		PKSwap(dst_image->m_Frames, new_image->m_Frames);
-		PKSwap(dst_image->m_DensityRecords, new_image->m_DensityRecords);
+		dst_image->Swap(*new_image);
 	} else {
 		dst_image->Clear();
 	}

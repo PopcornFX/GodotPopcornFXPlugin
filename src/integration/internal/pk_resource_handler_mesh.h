@@ -40,17 +40,21 @@ class PKResourceMeshEntry : public RefCounted {
 public:
 	~PKResourceMeshEntry();
 	static void _bind_methods() {}
+	String import_path;
+	bool unimported = false;
 	PResourceMesh pk_resource;
 	Ref<Resource> gd_resource;
+	TAtomic<int> refs;
 };
 
-class PKResourceHandlerMesh : public IResourceHandler {
+class PKResourceHandlerMesh : public Object, public IResourceHandler {
+	GDCLASS(PKResourceHandlerMesh, Object)
 public:
 	static void startup();
 	static void shutdown();
 
 	PKResourceHandlerMesh() = default;
-	~PKResourceHandlerMesh() = default;
+	~PKResourceHandlerMesh();
 
 	static CResourceMesh *new_from_gd_meshes(const Vector<Pair<Ref<Mesh>, Transform3D>> &p_meshes);
 	static CResourceMesh *new_from_gd_resource(const Ref<Resource> p_resource);
@@ -98,12 +102,24 @@ public:
 			const CFilePackPath &p_resource_path,
 			TArray<CString> &r_resource_paths) const override;
 
+protected:
+	static void _bind_methods() {}
+
 private:
+	HashMap<String, Ref<PKResourceMeshEntry>> mesh_entries;
+	HashMap<void *, Ref<PKResourceMeshEntry>> mesh_entries_r;
+	Threads::CRWLock mesh_entries_lock;
+	TAtomic<bool> connected = false;
+
 	static Vector<RawMeshData> _raw_from_gd_meshes(const Vector<Pair<Ref<Mesh>, Transform3D>> &p_meshes);
 	static Vector<Pair<Ref<Mesh>, Transform3D>> _meshes_from_packed_scene(const Ref<PackedScene> p_packed_scene);
 
 	static void _update_mesh(Ref<PKResourceMeshEntry> p_entry);
-	static void _deferred_update_mesh(const String& p_path, Ref<PKResourceMeshEntry> p_entry);
+	void _deferred_update_mesh(const String &p_path, Ref<PKResourceMeshEntry> p_entry);
+	void _resources_reimported(const PackedStringArray &p_resources);
+
+	void _connect_resource_reimport_ifn();
+	void _disconnect_resource_reimport_ifn();
 };
 
 } // namespace godot

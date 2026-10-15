@@ -35,7 +35,9 @@ PKBakeContext::~PKBakeContext() {
 		bake_resource_manager->UnregisterHandler<CFontMetrics>(bake_resource_fontmetrics_handler);
 		bake_resource_manager->UnregisterHandler<CVectorField>(bake_resource_vectorfield_handler);
 	}
-	PK_SAFE_DELETE(bake_resource_mesh_handler);
+	if (bake_resource_mesh_handler != nullptr) {
+		memdelete(bake_resource_mesh_handler);
+	}
 	PK_SAFE_DELETE(bake_resource_image_handler);
 	PK_SAFE_DELETE(bake_resource_rectangle_list_handler);
 	PK_SAFE_DELETE(bake_resource_fontmetrics_handler);
@@ -56,7 +58,7 @@ bool PKBakeContext::init() {
 	PKGD_ASSERT(bake_resource_vectorfield_handler == nullptr);
 
 	// Keep this updated with all PopcornFX resource types
-	bake_resource_mesh_handler = PK_NEW(PKResourceHandlerMesh);
+	bake_resource_mesh_handler = memnew(PKResourceHandlerMesh);
 	bake_resource_image_handler = PK_NEW(PKResourceHandlerImage);
 	bake_resource_rectangle_list_handler = PK_NEW(CResourceHandlerRectangleList);
 	bake_resource_fontmetrics_handler = PK_NEW(CResourceHandlerFontMetrics);

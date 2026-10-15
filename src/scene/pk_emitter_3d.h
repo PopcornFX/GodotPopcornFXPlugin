@@ -47,7 +47,7 @@ public:
 
 	PKEmitter3D();
 	~PKEmitter3D();
-	PackedStringArray _get_configuration_warnings() const;
+	PackedStringArray _get_configuration_warnings() const override;
 
 protected:
 	static void _bind_methods();

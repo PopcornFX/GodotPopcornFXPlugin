@@ -4,7 +4,10 @@
 //----------------------------------------------------------------------------
 #include "pk_resource_handler_mesh.h"
 
+#include "godot_cpp/classes/editor_file_system.hpp"
+#include "godot_cpp/classes/editor_file_system_directory.hpp"
 #include "godot_cpp/classes/editor_interface.hpp"
+#include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/material.hpp"
 #include "godot_cpp/classes/mesh_instance3d.hpp"
 #include "godot_cpp/classes/os.hpp"
@@ -45,6 +48,10 @@ void PKResourceHandlerMesh::shutdown() {
 		memdelete(g_resource_handler_mesh_godot);
 		g_resource_handler_mesh_godot = nullptr;
 	}
+}
+
+PKResourceHandlerMesh::~PKResourceHandlerMesh() {
+	_disconnect_resource_reimport_ifn();
 }
 
 CResourceMesh *PKResourceHandlerMesh::new_from_gd_meshes(const Vector<Pair<Ref<Mesh>, Transform3D>> &p_meshes) {
@@ -241,12 +248,34 @@ void *PKResourceHandlerMesh::Load(
 		ERR_FAIL_V_MSG(nullptr, "PKResourceHandlerMesh: given resource path is empty.");
 	}
 
-	// Create entry with an empty godot mesh, (potentially) defer call to fill said mesh and update popcorn resource
-	Ref<PKResourceMeshEntry> entry = memnew(PKResourceMeshEntry);
-	entry->pk_resource = PK_NEW(CResourceMesh);
-	RenderingServer::get_singleton()->call_on_render_thread(callable_mp_static(&PKResourceHandlerMesh::_deferred_update_mesh).bind(entry).bind(godot_path));
+	Ref<PKResourceMeshEntry> entry;
+	mesh_entries_lock.LockRead();
+	if (mesh_entries.has(godot_path)) {
+		entry = mesh_entries[godot_path];
+		entry->refs.Inc();
+		mesh_entries_lock.UnlockRead();
+	} else {
+		mesh_entries_lock.UnlockRead();
+		mesh_entries_lock.LockWrite();
+		if (mesh_entries.has(godot_path)) {
+			// Another Load took care of it in-between locks
+			entry = mesh_entries[godot_path];
+			entry->refs.Inc();
+			mesh_entries_lock.UnlockWrite();
+		} else {
+			// Create entry with an empty godot mesh, (potentially) defer call to fill said mesh and update popcorn resource
+			entry = Ref(memnew(PKResourceMeshEntry));
+			entry->pk_resource = PK_NEW(CResourceMesh);
+			entry->import_path = godot_path;
+			mesh_entries[godot_path] = entry;
+			mesh_entries_r[entry->pk_resource.Get()] = entry;
+			entry->refs.Inc();
+			mesh_entries_lock.UnlockWrite();
+			RenderingServer::get_singleton()->call_on_render_thread(callable_mp(this, &PKResourceHandlerMesh::_deferred_update_mesh).bind(entry).bind(godot_path));
+		}
+	}
 	if (p_async_load_status != nullptr) {
-		p_async_load_status->m_Resource = nullptr;
+		p_async_load_status->m_Resource = entry->pk_resource.Get();
 		p_async_load_status->m_Done = true;
 		p_async_load_status->m_Progress = 1.0f;
 	}
@@ -269,6 +298,23 @@ void PKResourceHandlerMesh::Unload(
 		u32 p_resource_type_id,
 		void *p_resource) {
 	PKGD_ASSERT(p_resource_type_id == TResourceRouter<CResourceMesh>::ResourceTypeID());
+
+	PK_SCOPEDLOCK_WRITE(mesh_entries_lock)
+	ERR_FAIL_COND_MSG(!mesh_entries_r.has(p_resource), "PKResourceHandlerMesh: tried to unload an unknown PopcornFX resource.");
+
+	Ref<PKResourceMeshEntry> entry = mesh_entries_r[p_resource];
+	if (entry->refs.Dec() == 0) {
+		mesh_entries_r.erase(p_resource);
+		mesh_entries.erase(entry->import_path);
+
+		Ref<Resource> gd_resource = entry->gd_resource;
+		if (gd_resource.is_valid()) {
+			const Callable callable = callable_mp_static(PKResourceHandlerMesh::_update_mesh).bind(entry);
+			if (gd_resource->is_connected("changed", callable)) {
+				gd_resource->disconnect("changed", callable);
+			}
+		}
+	}
 }
 
 void PKResourceHandlerMesh::AppendDependencies(
@@ -415,17 +461,91 @@ void PKResourceHandlerMesh::_update_mesh(const Ref<PKResourceMeshEntry> p_entry)
 }
 
 void PKResourceHandlerMesh::_deferred_update_mesh(const String &p_path, Ref<PKResourceMeshEntry> p_entry) {
-	Ref<Resource> resource = ResourceLoader::get_singleton()->load(p_path);
-	ERR_FAIL_NULL(resource);
-	p_entry->gd_resource = resource;
-	const Callable callable = callable_mp_static(PKResourceHandlerMesh::_update_mesh).bind(p_entry);
-	if (resource->is_connected("changed", callable)) {
-		resource->disconnect("changed", callable); // reconnect to update the entry parameter
+	ResourceLoader *loader = ResourceLoader::get_singleton();
+	{
+		PK_SCOPEDLOCK_WRITE(mesh_entries_lock)
+		if (!mesh_entries_r.has(p_entry->pk_resource.Get())) {
+			// PKFX resource got unloaded, nothing to do.
+			return;
+		}
+
+		if (Engine::get_singleton()->is_editor_hint()) {
+			if (FileAccess::file_exists(p_path) && !loader->exists(p_path)) {
+				// Resource exists but was not imported
+				p_entry->unimported = true;
+				_connect_resource_reimport_ifn();
+				return;
+			}
+		}
+	}
+	Ref<Resource> resource = loader->load(p_path); // Unlock for work
+	{
+		PK_SCOPEDLOCK_WRITE(mesh_entries_lock)
+		if (resource.is_null()) {
+			if (Engine::get_singleton()->is_editor_hint()) {
+				p_entry->unimported = true;
+				_connect_resource_reimport_ifn();
+			}
+			ERR_FAIL_NULL(resource);
+		}
+		if (p_entry->refs.Load() == 0 || p_entry->gd_resource.is_valid()) {
+			// Got unloaded/loaded, nothing to do
+			return;
+		}
+		p_entry->gd_resource = resource;
+		const Callable callable = callable_mp_static(PKResourceHandlerMesh::_update_mesh).bind(p_entry);
+		if (resource->is_connected("changed", callable)) {
+			resource->disconnect("changed", callable); // reconnect to update the entry parameter
+		}
+
+		// Use deferred connection, popcorn may reload the mesh when told it was changed, causing a ResourceLoader assert to pop up when trying to load the mesh currently being reimported
+		resource->connect("changed", callable, Object::CONNECT_DEFERRED);
 	}
 
-	// Use deferred connection, popcorn may reload the mesh when told it was changed, causing a ResourceLoader assert to pop up when trying to load the mesh currently being reimported
-	resource->connect("changed", callable, Object::CONNECT_DEFERRED);
 	_update_mesh(p_entry);
 }
 
+void PKResourceHandlerMesh::_resources_reimported(const PackedStringArray &p_resources) {
+	mesh_entries_lock.LockWrite();
+	for (const String &resource : p_resources) {
+		if (!mesh_entries.has(resource)) {
+			continue;
+		}
+		Ref<PKResourceMeshEntry> entry = mesh_entries[resource];
+		if (entry->unimported) {
+			ResourceLoader *loader = ResourceLoader::get_singleton();
+			if (loader->exists(resource)) {
+				entry->unimported = false;
+				mesh_entries_lock.UnlockWrite(); // _deferred_update_mesh may end up calling methods of this resource handler.
+				_deferred_update_mesh(resource, entry);
+				mesh_entries_lock.LockWrite();
+			}
+		}
+	}
+	mesh_entries_lock.UnlockWrite();
+}
+
+void PKResourceHandlerMesh::_connect_resource_reimport_ifn() {
+	if (!connected.SetValueIfEqualTo(true, false)) {
+		EditorFileSystem *filesystem = EditorInterface::get_singleton()->get_resource_filesystem();
+		const Callable callable = callable_mp(this, &PKResourceHandlerMesh::_resources_reimported);
+		filesystem->connect("resources_reimported", callable);
+	}
+}
+
+void PKResourceHandlerMesh::_disconnect_resource_reimport_ifn() {
+	if (connected.Load()) {
+		const EditorInterface *interface = EditorInterface::get_singleton();
+		if (interface == nullptr) {
+			return;
+		}
+		EditorFileSystem *filesystem = interface->get_resource_filesystem();
+		if (filesystem == nullptr) {
+			return;
+		}
+		const Callable callable = callable_mp(this, &PKResourceHandlerMesh::_resources_reimported);
+		filesystem->disconnect("resources_reimported", callable);
+		connected.Store(false);
+	}
+}
 } // namespace godot
