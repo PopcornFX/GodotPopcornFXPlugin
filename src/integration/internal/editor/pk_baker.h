@@ -15,6 +15,10 @@
 #include <pk_particles/include/ps_font_metrics_resource.h>
 #include <pk_particles/include/ps_vectorfield_resource.h>
 
+namespace godot {
+class PKResourceHandlerMesh;
+}
+
 __PK_API_BEGIN
 PK_FORWARD_DECLARE(OvenBakeConfig_Particle);
 PK_FORWARD_DECLARE(IFileSystem);
@@ -29,7 +33,7 @@ struct PKBakeContext {
 	CResourceManager *bake_resource_manager = nullptr;
 	HBO::CContext *bake_context = nullptr;
 	IResourceHandler *bake_resource_image_handler = nullptr;
-	IResourceHandler *bake_resource_mesh_handler = nullptr;
+	godot::PKResourceHandlerMesh *bake_resource_mesh_handler = nullptr;
 	IResourceHandler *bake_resource_rectangle_list_handler = nullptr;
 	IResourceHandler *bake_resource_vectorfield_handler = nullptr;
 	IResourceHandler *bake_resource_fontmetrics_handler = nullptr;

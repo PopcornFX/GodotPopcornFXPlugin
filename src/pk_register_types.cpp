@@ -45,8 +45,9 @@ void initialize_popcornfx_module(ModuleInitializationLevel p_level) {
 		PKPlugin::create_singleton();
 		PKStringNames::create_singleton();
 
-		ClassDB::register_class<PKResourceMeshEntry>();
-		ClassDB::register_class<PKResourceImageEntry>();
+		ClassDB::register_internal_class<PKResourceMeshEntry>();
+		ClassDB::register_internal_class<PKResourceHandlerMesh>();
+		ClassDB::register_internal_class<PKResourceImageEntry>();
 
 		ClassDB::register_class<PKAttributeSampler>();
 		ClassDB::register_class<PKAttributeSamplerShape>();
@@ -65,7 +66,7 @@ void initialize_popcornfx_module(ModuleInitializationLevel p_level) {
 		ResourceLoader::get_singleton()->add_resource_format_loader(popcornfx_effect_loader);
 
 		ClassDB::register_class<PKEffect>();
-		ClassDB::register_class<PKManager>();
+		ClassDB::register_internal_class<PKManager>();
 		popcornfx_manager = memnew(PKManager);
 		popcornfx_manager_id = popcornfx_manager->get_instance_id();
 		popcornfx_manager->init();
