@@ -7,12 +7,10 @@
 #include "godot_cpp/classes/resource.hpp"
 #include "godot_cpp/classes/resource_format_loader.hpp"
 
+#include "integration/internal/pk_scene.h"
 #include "integration/pk_sdk.h"
 #include "pk_particles/include/ps_effect.h"
-
-namespace PopcornFX {
-PK_FORWARD_DECLARE(ParticleEffect);
-}
+#include "pk_register_types.h"
 
 namespace godot {
 
@@ -24,7 +22,8 @@ public:
 	String get_load_path() { return load_path; }
 	const PParticleEffect get_effect() { return effect; }
 	Error load(const String &p_path);
-	PParticleEffectInstance create_instance();
+	PParticleEffectInstance create_instance(PKScene *p_scene);
+	DEFINE_BASIC_PROPERTY(int, z_index) // Used for 2D only. Not ideal but popcorn currently does not offer per-instance rendering.
 
 	PKEffect() = default;
 	~PKEffect();

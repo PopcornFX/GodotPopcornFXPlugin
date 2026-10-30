@@ -34,7 +34,7 @@ public:
 	PKAttributeSamplerShape() = default;
 	virtual ~PKAttributeSamplerShape();
 
-	virtual void set_emitter(PKEmitter3D *p_emitter) override;
+	virtual void set_emitter(Node *p_emitter) override;
 	void update_transforms();
 
 	Ref<Resource> get_shape() const { return shape; }
@@ -65,16 +65,19 @@ protected:
 	void _set_node(MeshInstance3D *p_new_node);
 	void _setup_mesh_runtime_structs(CShapeDescriptor_Mesh *p_desc);
 	void _clear_mesh_runtime_structs();
+	SSpawnTransformsPack _get_parent_transforms_pack() const;
 
 	bool ready = false;
 	Ref<Resource> shape;
 	MeshInstance3D *node = nullptr;
 	NodePath node_path;
-	TransformMode transform_mode = TRANSFORM_NONE;
 	SampleMode sample_mode = SAMPLE_SHAPE;
 
-	CFloat4x4 node_global_transform_previous = CFloat4x4::ZERO;
-	CFloat4x4 node_global_transform = CFloat4x4::ZERO;
+	TransformMode transform_mode = TRANSFORM_NONE;
+	CFloat4x4 local_transform = CFloat4x4::IDENTITY;
+	SSpawnTransformsPack parent_transforms_pack;
+	CFloat4x4 global_transform_previous = CFloat4x4::IDENTITY;
+	CFloat4x4 global_transform = CFloat4x4::IDENTITY;
 
 	PackedVector3Array mesh_vertices;
 	PackedInt32Array mesh_indices;

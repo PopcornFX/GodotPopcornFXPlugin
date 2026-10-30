@@ -11,6 +11,7 @@
 #include "core/pk_shader_material.h"
 #include "integration/engine/render/pk_render_type_policies.h"
 #include "integration/engine/render/pk_render_utils.h"
+#include "pk_render.h"
 
 #include <pk_render_helpers/include/batch_jobs/rh_batch_jobs_mesh_cpu.h>
 
@@ -22,7 +23,7 @@ class PKBatchDrawerMeshCPU : public CRendererBatchJobs_Mesh_CPUBB {
 public:
 	typedef CRendererBatchJobs_Mesh_CPUBB Super;
 
-	PKBatchDrawerMeshCPU() = default;
+	PKBatchDrawerMeshCPU(PKRender::RenderMode p_render_mode) : render_mode(p_render_mode) {}
 	~PKBatchDrawerMeshCPU() = default;
 
 	virtual bool Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) override;
@@ -53,6 +54,8 @@ private:
 	static bool _is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type);
 	void _clear_stream_offsets();
 
+	PKRender::RenderMode render_mode;
+
 	uint32_t particle_count = 0; // Total number of billboarded particles
 
 	PKScene *owner_scene = nullptr;
@@ -63,7 +66,7 @@ private:
 	PKRenderDebugAABB aabb_debug;
 #endif
 
-	TArray<CFloat4x4, TArrayAligned16> instanced_matrices;
+	TArray<CFloat4x4, TArrayStaticController<32>> instanced_matrices;
 	PackedByteArray instanced_transforms;
 
 	PKBuffer sim_data;

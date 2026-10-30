@@ -4,42 +4,69 @@
 //----------------------------------------------------------------------------
 #include "pk_batch_drawer_mesh_cpu.h"
 
+#include "godot_cpp/classes/box_shape3d.hpp"
+#include "godot_cpp/classes/project_settings.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
+#include "godot_cpp/templates/hash_set.hpp"
 
 #include "integration/engine/render/pk_frame_collector_types.h"
 #include "integration/engine/render/pk_renderer_cache.h"
+#include "integration/internal/pk_project_settings.h"
 #include "integration/internal/pk_scene.h"
 #include "integration/pk_plugin.h"
+#include "pk_manager.h"
 
+#include <pk_maths/include/pk_maths_simd_matrix.h>
 #include <pk_maths/include/pk_maths_simd_vector.h>
 #include <pk_render_helpers/include/render_features/rh_features_basic.h>
 
 using RS = RenderingServer;
+
+// TODO: Reevaluate implementing 2D mesh renderers.
+// Godot currently has poor support for 3D meshes in 2D scenes. Such meshes cannot be rotated on the 3D axes, instead acting as a sprite with z rotation and skew.
+// Additionally, the lack of depth buffer creates issues with rendering textures on these meshes, requiring triangle sorting/OIT to render properly.
+// These two big issues accumulate into making 3D mesh support quite basic in 2D.
+// If we one day want to implement better support, the easiest path may be to add support in Godot for multimeshes with 3D transforms to be rendered in the canvas renderer.
+// Though I (Arthur) haven't done any exploration on that, so it may be more annoying that I've guessed.
 
 bool PKBatchDrawerMeshCPU::Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) {
 	if (!Super::Setup(p_renderer, p_owner, p_fc, p_storage_class)) {
 		return false;
 	}
 
-	owner_scene = PKPlugin::get_singleton()->get_scene();
-	if (owner_scene == nullptr) {
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		owner_scene = PKPlugin::get_singleton()->get_scene_3d();
+	} else {
+		owner_scene = PKPlugin::get_singleton()->get_scene_2d();
+	}
+
+	if (!PKGD_VERIFY(owner_scene != nullptr)) {
 		return false;
 	}
 
 	RS *rs = RS::get_singleton();
 
-	// Init mesh and visual instance, then link them together
-	multimesh = rs->multimesh_create();
-	const RID instance = owner_scene->get_or_create_visual_instance(multimesh).first;
-	rs->instance_set_base(instance, multimesh);
-
-	// Get the material and apply its settings to the visual instance
+	// Create material
 	shader_mat = &owner_scene->get_or_create_shader_material(p_renderer);
 	if (shader_mat->mesh == nullptr) {
 		return false;
 	}
-	shader_mat->apply_to_visual_instance(instance);
+
+	// Init mesh, then create and link with visual instance or canvas item
+	multimesh = rs->multimesh_create();
 	rs->multimesh_set_mesh(multimesh, shader_mat->mesh->get_rid());
+
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		const RID instance = owner_scene->get_or_create_visual_instance(multimesh).first;
+		rs->instance_set_base(instance, multimesh);
+		shader_mat->apply_to_visual_instance(instance);
+	}
+
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		const RID canvas_item = owner_scene->get_or_create_canvas_item(multimesh).first;
+		rs->canvas_item_add_multimesh(canvas_item, multimesh);
+		rs->canvas_item_set_material(canvas_item, shader_mat->material->get_rid());
+	}
 
 #ifdef PK_DEBUG_AABB
 	aabb_debug.init(owner_scene);
@@ -51,7 +78,11 @@ bool PKBatchDrawerMeshCPU::Setup(const CRendererDataBase *p_renderer, const CPar
 
 void PKBatchDrawerMeshCPU::Destroy() {
 	if (owner_scene != nullptr) {
-		owner_scene->clear_visual_instance(multimesh);
+		if (render_mode == PKRender::RENDER_MODE_3D) {
+			owner_scene->clear_visual_instance(multimesh);
+		} else {
+			owner_scene->clear_canvas_item(multimesh);
+		}
 #ifdef PK_DEBUG_AABB
 		aabb_debug.destroy(owner_scene);
 #endif
@@ -64,6 +95,16 @@ void PKBatchDrawerMeshCPU::Destroy() {
 bool PKBatchDrawerMeshCPU::AreRenderersCompatible(const CRendererDataBase *p_renderer_a, const CRendererDataBase *p_renderer_b) const {
 	if (!Super::AreRenderersCompatible(p_renderer_a, p_renderer_b)) {
 		return false;
+	}
+
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		const PKRendererCache *renderer_cache_a = static_cast<PKRendererCache *>(p_renderer_a->m_RendererCache.Get());
+		const int z_index_a = PKManager::get_singleton()->get_effect_z_index(renderer_cache_a->get_effect_path());
+		const PKRendererCache *renderer_cache_b = static_cast<PKRendererCache *>(p_renderer_b->m_RendererCache.Get());
+		const int z_index_b = PKManager::get_singleton()->get_effect_z_index(renderer_cache_b->get_effect_path());
+		if (z_index_a != z_index_b) {
+			return false;
+		}
 	}
 
 	const PKShaderMaterial &shader_a = owner_scene->get_or_create_shader_material(p_renderer_a);
@@ -80,9 +121,16 @@ bool PKBatchDrawerMeshCPU::AllocBuffers(SRenderContext &p_ctx) {
 	particle_count = m_DrawPass->m_TotalParticleCount;
 
 	instanced_matrices.Resize(particle_count);
-	instanced_transforms.resize(particle_count * sizeof(float) * 12);
 
-	RS::get_singleton()->multimesh_allocate_data(multimesh, particle_count, RenderingServer::MULTIMESH_TRANSFORM_3D);
+	int transform_width = 12;
+	RS::MultimeshTransformFormat transform_format = RS::MULTIMESH_TRANSFORM_3D;
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		transform_width = 8;
+		transform_format = RS::MULTIMESH_TRANSFORM_2D;
+	}
+	instanced_transforms.resize(particle_count * sizeof(float) * transform_width);
+
+	RS::get_singleton()->multimesh_allocate_data(multimesh, particle_count, transform_format);
 
 	// Additional inputs
 	if (m_DrawPass->m_IsNewFrame) {
@@ -163,13 +211,43 @@ bool PKBatchDrawerMeshCPU::MapBuffers(SRenderContext &p_ctx) {
 
 bool PKBatchDrawerMeshCPU::UnmapBuffers(SRenderContext &p_ctx) {
 	float *mapped_transforms = reinterpret_cast<float *>(instanced_transforms.ptrw());
-	for (uint32_t i = 0; i < particle_count; ++i) {
-		float *ptr = mapped_transforms + i * 12;
-		SIMD::Float4 row0, row1, row2, row3;
-		SIMD::LoadAligned16_Transpose4x4(row0, row1, row2, row3, &instanced_matrices[i]);
-		row0.StoreUnaligned(ptr, 0x00);
-		row1.StoreUnaligned(ptr, 0x10);
-		row2.StoreUnaligned(ptr, 0x20);
+	const CFloat4x4 *matrices_ptr = instanced_matrices.RawDataPointer();
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		for (uint32_t i = 0; i < particle_count; ++i) {
+			float *ptr = mapped_transforms + i * 12;
+			SIMD::Float4 row0, row1, row2, row3;
+			SIMD::LoadAligned16_Transpose4x4(row0, row1, row2, row3, &matrices_ptr[i]);
+			row0.StoreUnaligned(ptr, 0x00);
+			row1.StoreUnaligned(ptr, 0x10);
+			row2.StoreUnaligned(ptr, 0x20);
+		}
+	} else {
+		// Rescale and pack transform matrices from popcorn format to Godot format
+		// {x0x1x2x3, y0y1y2y3, z0z1z2z3, w0w1w2w3} -> {x0y0z0w0x1y1z1w1}
+		const float unit_pixel_size = PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+		constexpr uint32_t single_neg_mask = uint32_t(1) << 31;
+		const SIMD::Float4 neg_mask_0 = SIMD::Float4::FromConstInt<single_neg_mask, 0, 0, 0>();
+		const SIMD::Float4 neg_mask_1 = SIMD::Float4::FromConstInt<0, single_neg_mask, 0, single_neg_mask>();
+		for (uint32_t i = 0; i < particle_count; ++i) {
+			SIMD::Float4 rx = SIMD::Float4::LoadAligned16(&matrices_ptr[i], 0x00);
+			SIMD::Float4 ry = SIMD::Float4::LoadAligned16(&matrices_ptr[i], 0x10);
+			SIMD::Float4 rz = SIMD::Float4::LoadAligned16(&matrices_ptr[i], 0x20);
+			SIMD::Float4 rw = SIMD::Float4::LoadAligned16(&matrices_ptr[i], 0x30);
+			SIMD::Float4 x0y0x1y1 = SIMD::InterleaveLo(rx, ry);
+			SIMD::Float4 z0w0z1w1 = SIMD::InterleaveLo(rz, rw);
+
+			SIMD::Float4 x0y0z0w0 = SIMD::MoveLoHi(x0y0x1y1, z0w0z1w1);
+			SIMD::Float4 x1y1z1w1 = SIMD::MoveHiLo(z0w0z1w1, x0y0x1y1);
+
+			x0y0z0w0 *= unit_pixel_size;
+			x1y1z1w1 *= unit_pixel_size;
+			x0y0z0w0 ^= neg_mask_0;
+			x1y1z1w1 ^= neg_mask_1;
+
+			float *ptr = mapped_transforms + i * 8;
+			x0y0z0w0.StoreUnaligned(ptr);
+			x1y1z1w1.StoreUnaligned(ptr, 0x10);
+		}
 	}
 
 	sim_data.unmap();
@@ -183,7 +261,7 @@ bool PKBatchDrawerMeshCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDe
 
 	const PKRenderContext &render_context = static_cast<PKRenderContext &>(p_ctx);
 	const PKRendererCache *renderer_cache = static_cast<PKRendererCache *>(p_to_emit.m_RendererCaches.First().Get());
-	if (!PKGD_VERIFY(renderer_cache != null)) {
+	if (!PKGD_VERIFY(renderer_cache != nullptr)) {
 		return true;
 	}
 
@@ -191,6 +269,22 @@ bool PKBatchDrawerMeshCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDe
 
 	// Set the bounding box of the batch drawer for culling
 	AABB mesh_bbox = to_gd(p_to_emit.m_BBox);
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		// Resize mesh bbox & convert position
+		const float unit_pixel_size = PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+		mesh_bbox = to_gd(p_to_emit.m_BBox * unit_pixel_size);
+		mesh_bbox.position.y = -mesh_bbox.position.y - mesh_bbox.size.y;
+
+		// Apply bbox as a custom rect directly
+		const RID canvas_item = owner_scene->get_or_create_canvas_item(multimesh).first;
+		rs->canvas_item_set_custom_rect(canvas_item, true, Rect2(Vector2(mesh_bbox.position.x, mesh_bbox.position.y), Vector2(mesh_bbox.size.x, mesh_bbox.size.y)));
+
+		// Compute z-index
+		int z_index = PKManager::get_singleton()->get_effect_z_index(renderer_cache->get_effect_path());
+		z_index += shader_mat->transparent_sort_override;
+		rs->canvas_item_set_z_index(canvas_item, z_index);
+	}
+
 	rs->multimesh_set_custom_aabb(multimesh, mesh_bbox);
 
 	// Directly update the multimesh's GPU instance transforms buffer with our data
@@ -207,9 +301,15 @@ bool PKBatchDrawerMeshCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDe
 	}
 
 	// Request the rendering of our mesh
-	Pair<RID, bool> &instance = owner_scene->get_or_create_visual_instance(multimesh);
-	RS::get_singleton()->instance_set_scenario(instance.first, render_context.scenario_id);
-	instance.second = true; // Tell scene that the instance was rendered this frame
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		Pair<RID, bool> &instance = owner_scene->get_or_create_visual_instance(multimesh);
+		rs->instance_set_scenario(instance.first, render_context.scenario_id);
+		instance.second = true; // Tell scene that the instance was rendered this frame
+	} else {
+		Pair<RID, bool> &canvas_item = owner_scene->get_or_create_canvas_item(multimesh);
+		rs->canvas_item_set_parent(canvas_item.first, render_context.canvas_id);
+		canvas_item.second = true; // Tell scene that the canvas item was rendered this frame
+	}
 
 #ifdef PK_DEBUG_AABB
 	aabb_debug.update(mesh_bbox);

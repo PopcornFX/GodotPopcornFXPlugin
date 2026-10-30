@@ -5,6 +5,7 @@
 #pragma once
 
 #include "integration/pk_sdk.h"
+#include "pk_render.h"
 
 #include "core/pk_buffer.h"
 #include "core/pk_packed_byte_array.h"
@@ -21,8 +22,8 @@ class PKBatchDrawerSoundCPU : public CRendererBatchJobs_Sound_Std {
 	typedef CRendererBatchJobs_Sound_Std Super;
 
 public:
-	PKBatchDrawerSoundCPU();
-	~PKBatchDrawerSoundCPU();
+	PKBatchDrawerSoundCPU(PKRender::RenderMode p_render_mode) : render_mode(p_render_mode) {}
+	~PKBatchDrawerSoundCPU() = default;
 
 	virtual bool Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) override;
 
@@ -36,6 +37,8 @@ public:
 private:
 	PKScene *owner_scene = nullptr;
 	bool _render_audio(const Drawers::SSound_DrawRequest *p_sound_request, PKRendererCacheAudio *p_renderer_cache, const u32 p_particle_count);
+
+	PKRender::RenderMode render_mode;
 };
 
 //----------------------------------------------------------------------------

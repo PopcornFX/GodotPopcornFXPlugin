@@ -13,6 +13,7 @@
 #include <pk_kernel/include/kr_memoryviews.h>
 #include <pk_kernel/include/kr_string_id.h>
 #include <pk_kernel/include/kr_threads_basics.h>
+#include <pk_kernel/include/kr_threads_rwlock.h>
 
 namespace godot {
 
@@ -39,13 +40,20 @@ public:
 	virtual void _process(double p_delta) override;
 	virtual void _exit_tree() override;
 	void render();
+	void render_3d();
+	void render_2d();
 
 	static PKManager *get_singleton() { return singleton; }
 
-	TMemoryView<const float *const> get_waveform(CStringId p_channel_group, u32 &r_base_count) const;
+	// To avoid lifetime issues when renderer caches hold PKEffect references, z_index values are stored globally in here.
+	void set_effect_z_index(const String &p_effect_path, int p_z_index);
+	int get_effect_z_index(const String &p_effect_path);
+
+	TMemoryView<const float *const> get_waveform(CStringId p_channel_group, PopcornFX::u32 &r_base_count) const;
 	TMemoryView<const float *const> get_spectrum(CStringId p_channel_group, u32 &r_base_count) const;
 
 	Node3D *get_current_audio_listener_3D();
+	Node2D *get_current_audio_listener_2D();
 
 	// Audio renderers
 	Node *find_suitable_parent_for_audio_pool_sources();
@@ -67,11 +75,15 @@ protected:
 	void _integrate_into_scene_tree();
 
 private:
-	const Viewport *_get_viewport() const;
+	const Viewport *_get_viewport_3d() const;
+	const Viewport *_get_viewport_2d() const;
+
+	HashMap<String, int> z_indexes; // <effect_path, z_index>. Accessed across threads by the batch drawers.
+	Threads::CRWLock z_index_lock;
 
 	// Audio samplers
 
-	mutable Ref<Mutex> audiosampling_lock = memnew(Mutex);
+	mutable Ref<CoreBind::Mutex> audiosampling_lock = memnew(CoreBind::Mutex);
 
 	// since CStringId is not usable inside a hashmap, we use its underlying numeric ID.
 	HashMap<uint32_t, AudioBufferDescriptor> cached_audio_waveform_buffers;

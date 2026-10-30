@@ -4,9 +4,13 @@
 //----------------------------------------------------------------------------
 #include "pk_audio_player_pool.h"
 
+#include "godot_cpp/classes/project_settings.hpp"
+
+#include "integration/pk_plugin.h"
+
 using namespace godot;
 
-template<>
+template <>
 void PKAudioPlayerPool<AudioStreamPlayer3D>::update_source(AudioStreamPlayer3D *p_audioSource, const Vector3 p_position, const float p_doppler_level, const float p_volume) {
 	p_audioSource->set_global_position(p_position);
 	p_audioSource->set_volume_linear(p_volume);
@@ -15,10 +19,10 @@ void PKAudioPlayerPool<AudioStreamPlayer3D>::update_source(AudioStreamPlayer3D *
 	//p_audioSource->set_max_distance(p_info.radius); // Not sure what this represents but it's too small to be used as a max distance for godot anyway.
 }
 
-template<>
+template <>
 void PKAudioPlayerPool<AudioStreamPlayer2D>::update_source(AudioStreamPlayer2D *p_audioSource, const Vector3 p_position, const float p_doppler_level, const float p_volume) {
-	// TODO scale this once we have a scale somewhere.
-	const Vector2 pos(p_position.x, p_position.y);
+	const float unit_pixel_size = PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+	const Vector2 pos(p_position.x * unit_pixel_size, -p_position.y * unit_pixel_size);
 	p_audioSource->set_global_position(pos);
 	p_audioSource->set_volume_linear(p_volume);
 	// Godot does not have doppler tracking for 2d sounds.

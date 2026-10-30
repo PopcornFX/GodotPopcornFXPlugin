@@ -1,20 +1,24 @@
-shader_type spatial;
+#ifdef PK_IS_3D
+	shader_type spatial;
+#elif defined(PK_IS_2D)
+	shader_type canvas_item;
+#endif
 
 #include "includes/popcornfx_utility_defines.gdshaderinc"
 
 #if defined(PK_BLEND_PREMUL_ALPHA)
-render_mode blend_premul_alpha;
+	render_mode blend_premul_alpha;
 #elif defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ADDITIVE_NO_ALPHA)
-render_mode blend_add;
+	render_mode blend_add;
 #else
-render_mode blend_mix;
+	render_mode blend_mix;
 #endif
 
-#ifdef PK_HAS_DOUBLE_SIDED
-render_mode cull_disabled;
+#if defined(PK_HAS_DOUBLE_SIDED) && defined(PK_IS_3D)
+	render_mode cull_disabled;
 #endif
-#ifndef PK_HAS_ANY_LIGHTING
-render_mode unshaded;
+#if !defined(PK_HAS_ANY_LIGHTING)
+	render_mode unshaded;
 #endif
 
 #include "includes/popcornfx_common.gdshaderinc"
@@ -23,8 +27,11 @@ render_mode unshaded;
 #include "includes/features/popcornfx_feature_diffuse.gdshaderinc"
 #include "includes/features/popcornfx_feature_emissive.gdshaderinc"
 #include "includes/features/popcornfx_feature_lighting.gdshaderinc"
-#include "includes/features/popcornfx_feature_soft_particles.gdshaderinc"
 #include "includes/features/popcornfx_feature_transform_uvs.gdshaderinc"
+
+#if defined(PK_IS_3D)
+	#include "includes/features/popcornfx_feature_soft_particles.gdshaderinc"
+#endif
 
 #ifdef PK_BLEND_MASKED
 	uniform float in_mask_threshold;
@@ -35,6 +42,9 @@ void vertex() {
 	
 #ifdef PK_HAS_DIFFUSE
 	var_diffuse_color = pk_vert_diffuse(particle_id);
+#ifdef PK_HAS_USE_VERTEX_COLOR
+	var_diffuse_color *= COLOR;
+#endif
 #endif
 #ifdef PK_HAS_EMISSIVE
 	var_emissive_color = pk_vert_emissive(particle_id);
@@ -69,7 +79,7 @@ void fragment() {
 #ifdef PK_HAS_ALPHA_REMAP
 	pk_frag_alpha_remap(albedo.a);
 #endif
-#ifdef PK_HAS_SOFT_PARTICLES
+#if defined(PK_HAS_SOFT_PARTICLES) && defined(PK_IS_3D)
 	pk_frag_soft_particles(albedo, SCREEN_UV, VERTEX, INV_PROJECTION_MATRIX);
 #endif
 #ifdef PK_HAS_EMISSIVE
@@ -83,30 +93,30 @@ void fragment() {
 #endif
 
 	// Apply computed albedo and alpha values
-	ALBEDO = albedo.rgb;
+	PK_ALBEDO = albedo.rgb;
 #if defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ALPHA) || defined(PK_BLEND_PREMUL_ALPHA)
 	#if defined(PK_HAS_EMISSIVE) && !defined(PK_HAS_DIFFUSE)
-		ALPHA = 1.0;
+		PK_ALPHA = 1.0;
 	#else
-		ALPHA = albedo.a;
+		PK_ALPHA = albedo.a;
 	#endif
 #elif defined(PK_BLEND_MASKED)
 	if (albedo.a < in_mask_threshold) {
 		discard;
 	}
 #endif
-#if defined(PK_BLEND_PREMUL_ALPHA) && defined(PK_HAS_ANY_LIGHTING)
+#if defined(PK_BLEND_PREMUL_ALPHA) && defined(PK_HAS_ANY_LIGHTING) && defined(PK_IS_3D)
 	// According to docs, this should only be written to when using a shaded material
 	PREMUL_ALPHA_FACTOR = albedo.a;
 #endif
 
 	// Apply computed emissive values
 #ifdef PK_HAS_EMISSIVE
-	#ifdef PK_HAS_ANY_LIGHTING
+	#if defined(PK_HAS_ANY_LIGHTING) && defined(PK_IS_3D)
 		EMISSION = emission;
 	#else
 		// 'render_mode unshaded' disables EMISSION, so add emissive to ALBEDO
-		ALBEDO += emission;
+		PK_ALBEDO += emission;
 	#endif
 #endif
 
@@ -114,11 +124,13 @@ void fragment() {
 #ifdef PK_HAS_ANY_LIGHTING
 	NORMAL_MAP = normal_map;
 #endif
-#ifdef PK_HAS_LIGHTING
-	ROUGHNESS = rough_metal_specular.x;
-	METALLIC = rough_metal_specular.y;
-#endif
-#ifdef PK_HAS_LIGHTING_LEGACY
-	SPECULAR = rough_metal_specular.z;
+#ifdef PK_IS_3D
+	#ifdef PK_HAS_LIGHTING
+		ROUGHNESS = rough_metal_specular.x;
+		METALLIC = rough_metal_specular.y;
+	#endif
+	#ifdef PK_HAS_LIGHTING_LEGACY
+		SPECULAR = rough_metal_specular.z;
+	#endif
 #endif
 }

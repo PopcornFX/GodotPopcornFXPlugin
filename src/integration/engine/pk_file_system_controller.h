@@ -64,8 +64,9 @@ public:
 		return dynamic_cast<PKFileSystemController *>(File::DefaultFileSystem());
 	}
 
-	String sanitize_path(const String &p_path, bool p_pk_virtual);
-	String sanitize_path(const CString &p_path, bool p_pk_virtual);
+	static String sanitize_physical_path(const String &p_path);
+	String sanitize_path(const String &p_path, bool p_pk_virtual) const;
+	String sanitize_path(const CString &p_path, bool p_pk_virtual) const;
 	const String &get_source_pack_root_dir() const { return cached_source_pack_root_dir; }
 	void set_source_pack_root_dir(const String &p_dir) { cached_source_pack_root_dir = p_dir; }
 

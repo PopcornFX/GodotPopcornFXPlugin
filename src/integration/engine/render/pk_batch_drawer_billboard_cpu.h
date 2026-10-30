@@ -5,6 +5,7 @@
 #pragma once
 
 #include "godot_cpp/classes/array_mesh.hpp"
+#include "pk_render.h"
 
 #include "integration/pk_sdk.h"
 
@@ -24,6 +25,8 @@ class PKScene;
 class PKBatchDrawerBillboardCPU : public CRendererBatchJobs_Billboard_CPUBB {
 public:
 	typedef CRendererBatchJobs_Billboard_CPUBB Super;
+
+	PKBatchDrawerBillboardCPU(PKRender::RenderMode p_render_mode) : render_mode(p_render_mode) {}
 
 	virtual bool Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) override;
 	virtual void Destroy() override;
@@ -57,6 +60,8 @@ private:
 	bool _is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type) const;
 	void _clear_stream_offsets();
 
+	PKRender::RenderMode render_mode;
+
 	const uint32_t mesh_buffers_padding = 1024;
 
 	uint32_t particle_count = 0; // Total number of billboarded particles
@@ -76,7 +81,7 @@ private:
 	bool realloc_surface = false; // Reset every frame, used to choose whether to update surface data or realloc it entirely
 
 	PKScene *owner_scene = nullptr;
-	const PKShaderMaterial *shader_mat = nullptr;
+	PKShaderMaterial *shader_mat = nullptr;
 	Ref<ArrayMesh> mesh;
 	Dictionary surface;
 
@@ -85,6 +90,8 @@ private:
 #endif
 
 	PKPackedByteArray idx_array; // CPU index array
+	TArray<CFloat2, TArrayAligned16> texcoords; // CPU texcoords. Copied to atb_array in UnmapBuffers to give an aligned buffer to popcorn as the billboarding slow path is unmaintained.
+	TArray<CFloat2, TArrayAligned16> texcoords2; // CPU texcoords2. Copied to atb_array in UnmapBuffers to give an aligned buffer to popcorn as the billboarding slow path is unmaintained.
 	PKPackedByteArray atb_array; // CPU attribute array (texture coords)
 	PKPackedByteArray vtx_array; // CPU vertex array (contains packed normals/tangents)
 	PKPackedByteArray nrm_tan_array; // CPU normal/tangent array (used for billboarding non-packed vectors)

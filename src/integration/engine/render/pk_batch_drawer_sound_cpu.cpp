@@ -97,18 +97,17 @@ void select_biggest_volumes(LocalVector<uint32_t> &p_indices, uint32_t p_n, Loca
 	quick_select_range(0, p_indices.size() - 1, 0, p_n, p_indices, p_volumes);
 }
 
-PKBatchDrawerSoundCPU::PKBatchDrawerSoundCPU() {
-}
-
-PKBatchDrawerSoundCPU::~PKBatchDrawerSoundCPU() {
-}
-
 bool PKBatchDrawerSoundCPU::Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) {
 	if (!Super::Setup(p_renderer, p_owner, p_fc, p_storage_class)) {
 		return false;
 	}
 
-	owner_scene = PKPlugin::get_singleton()->get_scene();
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		owner_scene = PKPlugin::get_singleton()->get_scene_3d();
+	} else {
+		owner_scene = PKPlugin::get_singleton()->get_scene_2d();
+	}
+
 	if (!PKGD_VERIFY(owner_scene != nullptr)) {
 		return false;
 	}
@@ -136,9 +135,9 @@ void PKBatchDrawerSoundCPU::BeginFrame(SRenderContext &p_ctx) {
 bool PKBatchDrawerSoundCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDesc &p_to_emit) {
 	for (uint32_t i = 0; i < p_to_emit.m_DrawRequests.Count(); ++i) {
 		const Drawers::SSound_DrawRequest *soundRequest = static_cast<const Drawers::SSound_DrawRequest *>(p_to_emit.m_DrawRequests[i]);
-		if (soundRequest != null) {
+		if (soundRequest != nullptr) {
 			PKRendererCacheAudio *renderer_cache = static_cast<PKRendererCacheAudio *>(p_to_emit.m_RendererCaches[i].Get());
-			if (!PKGD_VERIFY(renderer_cache != null)) {
+			if (!PKGD_VERIFY(renderer_cache != nullptr)) {
 				return false;
 			}
 			return _render_audio(soundRequest, renderer_cache, p_to_emit.m_TotalParticleCount);
@@ -154,13 +153,23 @@ bool PKBatchDrawerSoundCPU::_render_audio(const Drawers::SSound_DrawRequest *p_s
 	if (stream.is_null()) {
 		return false;
 	}
-	PKAudioPlayerPool<AudioStreamPlayer3D> &pool = p_renderer_cache->material_desc_sound.pool; // TODO modify when 2D
 
 	const uint32_t max_audio_source_count = ProjectSettings::get_singleton()->get_setting("popcornfx/runtime/max_audio_sources_count_per_clip");
-	pool.resize(max_audio_source_count);
+	PKAudioPlayerPool<AudioStreamPlayer3D> &pool_3d = p_renderer_cache->material_desc_sound.pool_3d;
+	PKAudioPlayerPool<AudioStreamPlayer2D> &pool_2d = p_renderer_cache->material_desc_sound.pool_2d;
 
-	if (pool.sources_parent == 0) {
-		return false;
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		pool_3d.resize(max_audio_source_count);
+
+		if (pool_3d.sources_parent == 0) {
+			return false;
+		}
+	} else {
+		pool_2d.resize(max_audio_source_count);
+
+		if (pool_2d.sources_parent == 0) {
+			return false;
+		}
 	}
 
 	const u32 draw_request_particle_count = p_sound_request->RenderedParticleCount();
@@ -173,14 +182,21 @@ bool PKBatchDrawerSoundCPU::_render_audio(const Drawers::SSound_DrawRequest *p_s
 		return false;
 	}
 	const CParticleStreamToRender_MainMemory *locked_stream = p_sound_request->StreamToRender_MainMemory();
-	if (!PK_VERIFY(locked_stream != null)) {
+	if (!PK_VERIFY(locked_stream != nullptr)) {
 		return false;
 	}
 
 	using PKActiveSourceInfo3D = PKAudioPlayerPool<AudioStreamPlayer3D>::PKActiveSourceInfo;
+	using PKActiveSourceInfo2D = PKAudioPlayerPool<AudioStreamPlayer2D>::PKActiveSourceInfo;
 
-	for (KeyValue<Vector2i, PKActiveSourceInfo3D> &entry : pool.active_sources) {
-		entry.value.updated_this_frame = false;
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		for (KeyValue<Vector2i, PKActiveSourceInfo3D> &entry : pool_3d.active_sources) {
+			entry.value.updated_this_frame = false;
+		}
+	} else {
+		for (KeyValue<Vector2i, PKActiveSourceInfo2D> &entry : pool_2d.active_sources) {
+			entry.value.updated_this_frame = false;
+		}
 	}
 
 	const uint32_t page_count = locked_stream->PageCount();
@@ -208,8 +224,12 @@ bool PKBatchDrawerSoundCPU::_render_audio(const Drawers::SSound_DrawRequest *p_s
 		// Dispatch AudioStreamPlayers.
 
 		// First get the biggest contributors from p_sound_infos.
-
-		uint32_t max_attributable_sources = MIN(pool.pooled_sources.size(), pcount);
+		uint32_t max_attributable_sources = 0;
+		if (render_mode == PKRender::RENDER_MODE_3D) {
+			max_attributable_sources = MIN(pool_3d.pooled_sources.size(), pcount);
+		} else {
+			max_attributable_sources = MIN(pool_2d.pooled_sources.size(), pcount);
+		}
 
 		// We do the quickselect in-place on an index permutation array (static so it doesn't re-alloc each frame).
 		static LocalVector<uint32_t> index_array;
@@ -221,12 +241,35 @@ bool PKBatchDrawerSoundCPU::_render_audio(const Drawers::SSound_DrawRequest *p_s
 			index_array.resize(pcount);
 			volumes_attenuated.resize(pcount);
 
-			Vector3 listener_position = manager->get_current_audio_listener_3D()->get_global_position();
+			if (render_mode == PKRender::RENDER_MODE_3D) {
+				Vector3 listener_position;
+				const Node3D *listener = manager->get_current_audio_listener_3D();
+				if (listener != nullptr) {
+					listener_position = listener->get_global_position();
+				} else {
+					WARN_PRINT_ONCE("PopcornFX sound renderer: could not find an AudioListener3D or Camera3D. Will use 0,0,0 as the listener position.");
+				}
 
-			for (int i = 0; i < pcount; ++i) {
-				index_array[i] = i;
-				float attenuation = 1.0 / positions[i].distance_squared_to(listener_position);
-				volumes_attenuated[i] = volumes[i] * attenuation;
+				for (int i = 0; i < pcount; ++i) {
+					index_array[i] = i;
+					float attenuation = 1.0 / positions[i].distance_squared_to(listener_position);
+					volumes_attenuated[i] = volumes[i] * attenuation;
+				}
+			} else {
+				Vector2 listener_position;
+				const Node2D *listener = manager->get_current_audio_listener_2D();
+				if (listener != nullptr) {
+					listener_position = listener->get_global_position();
+				} else {
+					WARN_PRINT_ONCE("PopcornFX sound renderer: could not find an AudioListener2D or Camera2D. Will use 0,0 as the listener position.");
+				}
+				const float unit_pixel_size = PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+				for (int i = 0; i < pcount; ++i) {
+					index_array[i] = i;
+					const Vector2 pos = Vector2(positions[i].x, -positions[i].y) * unit_pixel_size;
+					float attenuation = 1.0 / pos.distance_squared_to(listener_position);
+					volumes_attenuated[i] = volumes[i] * attenuation;
+				}
 			}
 
 			select_biggest_volumes(index_array, max_attributable_sources, volumes_attenuated);
@@ -252,29 +295,54 @@ bool PKBatchDrawerSoundCPU::_render_audio(const Drawers::SSound_DrawRequest *p_s
 			const float age = life_ratios[idx] / inv_lives[idx];
 
 			// Get the corresponding source (or take a new one from the pool if needed).
-			PKActiveSourceInfo3D *source;
-			if (pool.active_sources.has(self_id)) {
-				source = pool.active_sources.getptr(self_id);
-			} else {
-				source = pool.spawn_source(self_id, stream, age);
-			}
-			// Check if a source was available.
-			if (source == nullptr) {
-				break; // no sources anymore
-			}
+			if (render_mode == PKRender::RENDER_MODE_3D) {
+				PKActiveSourceInfo3D *source;
+				if (pool_3d.active_sources.has(self_id)) {
+					source = pool_3d.active_sources.getptr(self_id);
+				} else {
+					source = pool_3d.spawn_source(self_id, stream, age);
+				}
+				// Check if a source was available.
+				if (source == nullptr) {
+					break; // no sources anymore
+				}
 
-			pool.update_source(source->player_node, position, doppler_factor, volume);
-			source->updated_this_frame = true;
+				pool_3d.update_source(source->player_node, position, doppler_factor, volume);
+				source->updated_this_frame = true;
+			} else {
+				PKActiveSourceInfo2D *source;
+				if (pool_2d.active_sources.has(self_id)) {
+					source = pool_2d.active_sources.getptr(self_id);
+				} else {
+					source = pool_2d.spawn_source(self_id, stream, age);
+				}
+				// Check if a source was available.
+				if (source == nullptr) {
+					break; // no sources anymore
+				}
+
+				pool_2d.update_source(source->player_node, position, doppler_factor, volume);
+				source->updated_this_frame = true;
+			}
 		}
 	}
 
 	// Release the sources for which we didn't have an update.
-	for (const KeyValue<Vector2i, PKActiveSourceInfo3D> &entry : pool.active_sources) {
-		if (!entry.value.updated_this_frame) {
-			pool.release_source(entry.key);
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		for (const KeyValue<Vector2i, PKActiveSourceInfo3D> &entry : pool_3d.active_sources) {
+			if (!entry.value.updated_this_frame) {
+				pool_3d.release_source(entry.key);
+			}
 		}
+		owner_scene->set_sound_instance_rendered_3d(&pool_3d);
+	} else {
+		for (const KeyValue<Vector2i, PKActiveSourceInfo2D> &entry : pool_2d.active_sources) {
+			if (!entry.value.updated_this_frame) {
+				pool_2d.release_source(entry.key);
+			}
+		}
+		owner_scene->set_sound_instance_rendered_2d(&pool_2d);
 	}
-	owner_scene->set_sound_instance_rendered(&pool);
 
 	return true;
 }

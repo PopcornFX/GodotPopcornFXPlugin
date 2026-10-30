@@ -35,7 +35,7 @@ PKAudioEffectCapture::PKAudioEffectCapture() {
 Ref<AudioEffectInstance> PKAudioEffectCapture::_instantiate() {
 	if (!buffer_initialized) {
 		ERR_FAIL_COND_V(buffer_length_samples <= 0 || buffer_length_samples >= (1 << 27), Ref<AudioEffectInstance>());
-		buffer.resize(nearest_shift(buffer_length_samples));
+		buffer.resize(Math::nearest_shift(buffer_length_samples));
 		buffer_initialized = true;
 	}
 
@@ -51,7 +51,7 @@ Ref<AudioEffectInstance> PKAudioEffectCapture::_instantiate() {
 void PKAudioEffectCapture::set_buffer_length(uint32_t p_buffer_length_samples) {
 	ERR_FAIL_COND(p_buffer_length_samples <= 0 || p_buffer_length_samples >= (1 << 27));
 	buffer_length_samples = p_buffer_length_samples;
-	buffer.resize(nearest_shift(buffer_length_samples));
+	buffer.resize(Math::nearest_shift(buffer_length_samples));
 }
 
 uint32_t PKAudioEffectCapture::get_buffer_length() {

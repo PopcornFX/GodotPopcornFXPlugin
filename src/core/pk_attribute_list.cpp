@@ -5,11 +5,11 @@
 #include "pk_attribute_list.h"
 
 #include "integration/pk_error_handling.h"
+#include "integration/pk_plugin_types.h"
 #include "samplers/pk_attribute_sampler_audio.h"
 #include "samplers/pk_attribute_sampler_curve.h"
 #include "samplers/pk_attribute_sampler_image.h"
 #include "samplers/pk_attribute_sampler_shape.h"
-#include "scene/pk_emitter_3d.h"
 
 #include <pk_particles/include/ps_attributes.h>
 
@@ -79,7 +79,7 @@ void PKAttributeSamplerDesc::_bind_methods() {
 	BIND_BASIC_PROPERTY(PKAttributeSamplerDesc, STRING, name, PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE);
 }
 
-void PKAttributeList::set_emitter(PKEmitter3D *p_emitter) {
+void PKAttributeList::set_emitter(Node *p_emitter) {
 	emitter = p_emitter;
 
 	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
@@ -119,8 +119,8 @@ PKAttributeList::PKAttributeList() {
 	set_local_to_scene(true);
 }
 
-Ref<PKAttributeList> PKAttributeList::default_for_emitter(PKEmitter3D *p_emitter) {
-	const Ref<PKEffect> effect = p_emitter->effect;
+Ref<PKAttributeList> PKAttributeList::default_for_emitter(Node *p_emitter) {
+	const Ref<PKEffect> effect = p_emitter->call("get_effect");
 	if (!PKGD_VERIFY(effect->get_effect() != nullptr)) {
 		return nullptr;
 	}
@@ -181,26 +181,6 @@ Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc(const St
 	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
 		const Ref<PKAttributeSamplerDesc> desc = get_attribute_sampler_desc(i);
 		if (desc->get_name() == p_name) {
-			return desc;
-		}
-	}
-	return nullptr;
-}
-
-Ref<PKAttributeDesc> PKAttributeList::get_attribute_desc_by_uid(uint32_t p_uid) const {
-	for (int i = 0; i < attribute_descs.size(); i++) {
-		const Ref<PKAttributeDesc> desc = get_attribute_desc(i);
-		if (desc->get_uid() == p_uid) {
-			return desc;
-		}
-	}
-	return nullptr;
-}
-
-Ref<PKAttributeSamplerDesc> PKAttributeList::get_attribute_sampler_desc_by_uid(uint32_t p_uid) const {
-	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
-		const Ref<PKAttributeSamplerDesc> desc = get_attribute_sampler_desc(i);
-		if (desc->get_uid() == p_uid) {
 			return desc;
 		}
 	}
@@ -311,7 +291,7 @@ void PKAttributeList::resolve_effect_change() {
 
 	for (int i = 0; i < effect->get_effect()->GetAttributeCount(); i++) {
 		const CParticleAttributeDeclaration *decl = effect->get_effect()->GetAttributeDecl(i);
-		const Ref<PKAttributeDesc> old_desc = get_attribute_desc_by_uid(decl->UID());
+		const Ref<PKAttributeDesc> old_desc = get_attribute_desc(to_gd(decl->ExportedName()));
 		if (old_desc == nullptr) {
 			continue;
 		}
@@ -335,7 +315,7 @@ void PKAttributeList::resolve_effect_change() {
 		const CParticleAttributeSamplerDeclaration *new_decl = effect->get_effect()->GetAttributeSamplerDecl(i);
 		Ref<PKAttributeSamplerDesc> new_desc = PKAttributeSamplerDesc::from_declaration(new_decl, i);
 		new_attribute_sampler_descs[i] = new_desc;
-		Ref<PKAttributeSamplerDesc> old_desc = get_attribute_sampler_desc_by_uid(new_desc->get_uid());
+		Ref<PKAttributeSamplerDesc> old_desc = get_attribute_sampler_desc(new_desc->get_name());
 		if (old_desc.is_null()) {
 			new_attribute_samplers[i] = create_default_sampler(new_decl);
 			continue;
@@ -376,9 +356,10 @@ void PKAttributeList::resolve_attribute_change(const CParticleAttributeDeclarati
 }
 
 void PKAttributeList::reapply_attributes() {
+	PParticleEffectInstance effect_instance = _get_effect_instance();
 	for (int i = 0; i < attribute_descs.size(); i++) {
 		const Ref<PKAttributeDesc> desc = get_attribute_desc(i);
-		emitter->effect_instance->SetRawAttribute(i, EBaseTypeID(desc->get_type()), &attribute_raw_data()[i]);
+		effect_instance->SetRawAttribute(i, EBaseTypeID(desc->get_type()), &attribute_raw_data()[i]);
 	}
 
 	for (int i = 0; i < attribute_sampler_descs.size(); i++) {
@@ -386,7 +367,7 @@ void PKAttributeList::reapply_attributes() {
 		if (sampler.is_null()) {
 			continue;
 		}
-		emitter->effect_instance->SetAttributeSampler(i, sampler->get_sampler());
+		effect_instance->SetAttributeSampler(i, sampler->get_sampler());
 	}
 }
 
@@ -394,9 +375,9 @@ bool PKAttributeList::get_attribute(const String &p_name, SAttributesContainer_S
 	CHECK_EFFECT_VALID(false);
 	const CGuid id = effect->get_effect()->GetAttributeID(p_name.utf8().ptr());
 	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
-	if (_is_instance_valid()) {
+	if (_check_instance_valid()) {
 		const Ref<PKAttributeDesc> desc = attribute_descs[id];
-		return emitter->effect_instance->GetRawAttribute(id, EBaseTypeID(desc->get_type()), &r_value);
+		return _get_effect_instance()->GetRawAttribute(id, EBaseTypeID(desc->get_type()), &r_value);
 	}
 	memcpy(&r_value, &attribute_raw_data()[id], sizeof(SAttributesContainer_SAttrib));
 	return true;
@@ -405,8 +386,8 @@ bool PKAttributeList::get_attribute(const String &p_name, SAttributesContainer_S
 bool PKAttributeList::get_attribute(uint32_t p_id, SAttributesContainer_SAttrib &r_value) const {
 	CHECK_EFFECT_VALID(false);
 	const Ref<PKAttributeDesc> desc = attribute_descs[p_id];
-	if (emitter->effect_instance != nullptr) {
-		return emitter->effect_instance->GetRawAttribute(p_id, EBaseTypeID(desc->get_type()), &r_value);
+	if (_check_instance_valid()) {
+		return _get_effect_instance()->GetRawAttribute(p_id, EBaseTypeID(desc->get_type()), &r_value);
 	}
 	memcpy(&r_value, &attribute_raw_data()[p_id], sizeof(SAttributesContainer_SAttrib));
 	return true;
@@ -421,8 +402,8 @@ Variant PKAttributeList::get_attribute_variant(const String &p_name) const {
 	const EBaseTypeID type = EBaseTypeID(desc->get_type());
 	const EDataSemantic semantic = EDataSemantic(desc->get_semantic());
 	SAttributesContainer_SAttrib data{};
-	if (emitter->effect_instance != nullptr) {
-		const bool ok = emitter->effect_instance->GetRawAttribute(id, type, &data);
+	if (_check_instance_valid()) {
+		const bool ok = _get_effect_instance()->GetRawAttribute(id, type, &data);
 		ERR_FAIL_COND_V(!ok, nullptr);
 	} else {
 		memcpy(&data, &attribute_raw_data()[id], CBaseTypeTraits::Traits(type).Size);
@@ -479,7 +460,7 @@ bool PKAttributeList::set_attribute(const String &p_name, const SAttributesConta
 	ERR_FAIL_COND_V(id == CGuid::INVALID, false);
 	ERR_FAIL_COND_V(attribute_descs.size() <= id, false);
 	const Ref<PKAttributeDesc> desc = attribute_descs[id];
-	if (emitter->effect_instance != nullptr && !emitter->effect_instance->SetRawAttribute(id, EBaseTypeID(desc->get_type()), &p_value)) {
+	if (_check_instance_valid() && !_get_effect_instance()->SetRawAttribute(id, EBaseTypeID(desc->get_type()), &p_value)) {
 		return false;
 	}
 	attribute_raw_data()[id] = p_value;
@@ -489,7 +470,7 @@ bool PKAttributeList::set_attribute(const String &p_name, const SAttributesConta
 bool PKAttributeList::set_attribute(uint32_t p_id, const SAttributesContainer_SAttrib &p_value) {
 	ERR_FAIL_COND_V(emitter == nullptr, false);
 	const Ref<PKAttributeDesc> desc = attribute_descs[p_id];
-	if (emitter->effect_instance != nullptr && !emitter->effect_instance->SetRawAttribute(p_id, EBaseTypeID(desc->get_type()), &p_value)) {
+	if (_check_instance_valid() && !_get_effect_instance()->SetRawAttribute(p_id, EBaseTypeID(desc->get_type()), &p_value)) {
 		return false;
 	}
 	attribute_raw_data()[p_id] = p_value;
@@ -620,8 +601,7 @@ bool PKAttributeList::set_attribute_variant(const String &p_name, const Variant 
 			ERR_FAIL_V_MSG(false, vformat("Unsupported attribute type %s", CBaseTypeTraits::Traits(type).Name));
 	}
 
-	if (emitter->effect_instance != nullptr &&
-			!emitter->effect_instance->SetRawAttribute(id, type, &data)) {
+	if (_check_instance_valid() && !_get_effect_instance()->SetRawAttribute(id, type, &data)) {
 		return false;
 	}
 	attribute_raw_data()[id] = data;
@@ -687,7 +667,7 @@ bool PKAttributeList::set_attribute_sampler(uint32_t p_id, Ref<PKAttributeSample
 	ERR_FAIL_COND_V(attribute_samplers.size() <= p_id, false);
 	const Ref<PKAttributeSamplerDesc> desc = attribute_sampler_descs[p_id];
 	ERR_FAIL_NULL_V_MSG(desc, false, vformat("%d is not a valid attribute sampler id", p_id));
-	if (emitter->effect_instance != nullptr && !emitter->effect_instance->SetAttributeSampler(p_id, p_sampler.is_valid() ? p_sampler->get_sampler() : nullptr)) {
+	if (_get_effect_instance() != nullptr && !_get_effect_instance()->SetAttributeSampler(p_id, p_sampler.is_valid() ? p_sampler->get_sampler() : nullptr)) {
 		return false;
 	}
 	return set_attribute_sampler_raw(p_id, p_sampler);
@@ -772,8 +752,9 @@ bool PKAttributeList::_check_effect_valid() const {
 	return true;
 }
 
-bool PKAttributeList::_is_instance_valid() const {
-	return emitter->get_effect_instance() != nullptr && emitter->get_effect_instance()->Alive();
+bool PKAttributeList::_check_instance_valid() const {
+	PParticleEffectInstance effect_instance = _get_effect_instance();
+	return effect_instance != nullptr && effect_instance->Alive();
 }
 
 String PKAttributeList::_get_sampler_configuration_warnings(int p_sampler_id) const {
@@ -796,6 +777,22 @@ String PKAttributeList::_get_sampler_configuration_warnings(int p_sampler_id) co
 	}
 
 	return formatted;
+}
+
+PParticleEffectInstance PKAttributeList::_get_effect_instance() const {
+	const PKEmitter3D *emitter_3d = get_emitter_3d();
+	if (emitter_3d != nullptr) {
+		return emitter_3d->effect_instance;
+	}
+	const PKEmitter2D *emitter_2d = get_emitter_2d();
+	if (emitter_2d != nullptr) {
+		return emitter_2d->effect_instance;
+	}
+	const PKEmitterControl *emitter_control = get_emitter_control();
+	if (emitter_control != nullptr) {
+		return emitter_control->effect_instance;
+	}
+	ERR_FAIL_V_MSG(nullptr, "No valid PKEmitter cast");
 }
 
 void PKAttributeList::_connect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler) {

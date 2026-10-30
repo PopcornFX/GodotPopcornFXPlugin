@@ -14,6 +14,7 @@ public:
 		bool debug_baked_effects = false;
 #endif
 		CString source_pack_root;
+		float unit_pixel_size;
 	};
 
 	PKProjectSettings() = default;
@@ -23,7 +24,8 @@ public:
 
 	void set_settings(const EngineSettings &p_settings) { engine_settings = p_settings; }
 	const EngineSettings &settings() const { return engine_settings; }
-	const CString &get_source_pack_root_dir() const { return engine_settings.source_pack_root; }
+	const CString &source_pack_root_dir() const { return engine_settings.source_pack_root; }
+	float unit_pixel_size() const { return engine_settings.unit_pixel_size; }
 
 private:
 	EngineSettings engine_settings;

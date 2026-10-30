@@ -4,13 +4,16 @@
 //----------------------------------------------------------------------------
 #include "pk_shader_material.h"
 
+#include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/node.hpp"
+#include "godot_cpp/classes/project_settings.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/resource_loader.hpp"
 #include "godot_cpp/classes/shader_material.hpp"
 
 #include "integration/engine/render/pk_renderer_cache.h"
 #include "integration/internal/pk_resource_handler_mesh.h"
+#include "integration/pk_plugin.h"
 #include "integration/pk_plugin_types.h"
 
 #include <pk_particles/include/Renderers/ps_renderer_base.h>
@@ -42,6 +45,28 @@ static Ref<Mesh> load_mesh_pk(const CString &p_pk_path) {
 	}
 
 	return PKResourceHandlerMesh::gd_merge_packed_scene_mesh(resource);
+}
+
+String PKShaderMaterial::get_renderer_class_name(ERendererClass p_renderer_class) {
+	switch (p_renderer_class) {
+		case Renderer_Billboard:
+			return "BILLBOARD";
+		case Renderer_Ribbon:
+			return "RIBBON";
+		case Renderer_Mesh:
+			return "MESH";
+		case Renderer_Triangle:
+			return "TRIANGLE";
+		case Renderer_Decal:
+			return "DECAL";
+		case Renderer_Light:
+			return "LIGHT";
+		case Renderer_Sound:
+			return "SOUND";
+		default:
+			PK_ASSERT_NOT_IMPLEMENTED();
+			return "NOTIMPLEMENTED";
+	}
 }
 
 String PKShaderMaterial::get_blend_mode_name(BlendMode p_mode) {
@@ -115,18 +140,25 @@ String PKShaderMaterial::get_variation_flag_name(VariationFlags p_flag) {
 			return "SKELETAL_INTERPOL";
 		case VariationFlags::SKELETAL_TRACK_INTERPOL:
 			return "SKELETAL_TRACK_INTERPOL";
+		case VariationFlags::BILLBOARD_PLANE_ALIGNED:
+			return "BILLBOARD_PLANE_ALIGNED";
+		case VariationFlags::BILLBOARD_AXIS_ALIGNED:
+			return "BILLBOARD_AXIS_ALIGNED";
 		case VariationFlags::BILLBOARD_CAPSULE:
 			return "BILLBOARD_CAPSULE";
+		case VariationFlags::USE_VERTEX_COLOR:
+			return "USE_VERTEX_COLOR";
 		default:
 			return "";
 	}
 }
 
-void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
+void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer, PKRender::RenderMode p_render_mode) {
 	const SRendererDeclaration &decl = p_renderer.m_Declaration;
 	renderer_type = p_renderer.m_RendererType;
 	variation_flags = VariationFlags::NONE;
 	cast_shadows = false;
+	render_mode = p_render_mode;
 
 	const bool legacy_lit_opaque = decl.IsFeatureEnabled(BasicRendererProperties::SID_LegacyLitOpaque());
 	const bool legacy_lit = decl.IsFeatureEnabled(BasicRendererProperties::SID_LegacyLit());
@@ -248,13 +280,20 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
 	}
 
 	switch (renderer_type) {
-		case Renderer_Billboard:
+		case Renderer_Billboard: {
 			// Billboarding Mode
+			EBillboardMode billboard_mode = decl.GetPropertyValue_Enum(BasicRendererProperties::SID_BillboardingMode(), BillboardMode_ScreenAligned);
+			if (billboard_mode == BillboardMode_PlaneAligned) {
+				set_variation_flag(VariationFlags::BILLBOARD_PLANE_ALIGNED);
+			}
+			if (billboard_mode == BillboardMode_AxisAligned || billboard_mode == BillboardMode_AxisAlignedSpheroid || billboard_mode == BillboardMode_AxisAlignedCapsule) {
+				set_variation_flag(VariationFlags::BILLBOARD_AXIS_ALIGNED);
+			}
 			if (decl.GetPropertyValue_Enum(BasicRendererProperties::SID_BillboardingMode(), BillboardMode_ScreenAligned) == BillboardMode_AxisAlignedCapsule) {
 				set_variation_flag(VariationFlags::BILLBOARD_CAPSULE);
 			}
 			break;
-
+		}
 		case Renderer_Mesh:
 			// Mesh Resource
 			mesh = load_mesh_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_Mesh(), CString::EmptyString));
@@ -262,6 +301,11 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer) {
 			// Double sided
 			if (decl.IsFeatureEnabled(BasicRendererProperties::SID_Culling_DoubleSided())) {
 				set_variation_flag(VariationFlags::DOUBLE_SIDED);
+			}
+
+			// Vertex color
+			if (decl.IsFeatureEnabled(BasicRendererProperties::SID_UseVertexColor())) {
+				set_variation_flag(VariationFlags::USE_VERTEX_COLOR);
 			}
 			break;
 
@@ -276,7 +320,7 @@ void PKShaderMaterial::create_material_instance() {
 	{
 		ResourceLoader *loader = ResourceLoader::get_singleton();
 		const Ref<Shader> loaded_shader = loader->load(_get_shader_path(), "Shader");
-		if (loaded_shader.is_valid()) {
+		if (PKGD_VERIFY(loaded_shader.is_valid())) {
 			shader = loaded_shader->duplicate_deep();
 		}
 	}
@@ -287,7 +331,14 @@ void PKShaderMaterial::create_material_instance() {
 	}
 
 	// Add all shader defines to a string
-	String shader_defines = "#define PK_BLEND_" + get_blend_mode_name(blend_mode) + "\n";
+	String shader_defines;
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		shader_defines += "#define PK_IS_3D\n";
+	} else if (render_mode == PKRender::RENDER_MODE_2D) {
+		shader_defines += "#define PK_IS_2D\n";
+	}
+	shader_defines += "#define PK_RENDERER_" + get_renderer_class_name(renderer_type) + "\n";
+	shader_defines += "#define PK_BLEND_" + get_blend_mode_name(blend_mode) + "\n";
 	for (uint32_t i = 0; i < (uint32_t)VariationFlags::MAX; ++i) {
 		const VariationFlags cur_flag = (VariationFlags)(1 << i);
 		if (!has_variation_flag(cur_flag)) {
@@ -305,9 +356,19 @@ void PKShaderMaterial::create_material_instance() {
 	// Add constant defines at the start of the material's shader code
 	String shader_code = shader->get_code();
 	shader_code = shader_code.insert(0, shader_defines);
-	shader->set_path("res://addons/popcornfx/assets/materials/"); // Shader uses asset path as include dir (GDExtension doesn't expose Shader::set_include_path)
+
+	Dictionary version_info = Engine::get_singleton()->get_version_info();
+
+	// TODO: 4.8: clean this up, call set_include_path directly
+	if (shader->has_method("set_include_path")) {
+		shader->call("set_include_path", "res://addons/popcornfx/assets/materials/");
+	} else {
+		// Godot <4.8 doesn't expose Shader::set_include_path to GDExtensions and Shader uses asset path as the include path when it has one
+		// Using set_path then clearing after loading the code breaks 2D particle material loading, but take_over_path might cause wrong reimports in the same situation.
+		// Tested using different feature sets in different emitters and saw no issues, but to monitor. - Arthur
+		shader->take_over_path("res://addons/popcornfx/assets/materials/");
+	}
 	shader->set_code(shader_code);
-	shader->set_path(""); // Don't keep include path as asset path
 
 	// Create the material instance and set its shader
 	material.instantiate();
@@ -336,6 +397,9 @@ void PKShaderMaterial::apply_to_visual_instance(RID p_instance) const {
 void PKShaderMaterial::bind_material_properties(const PKRendererCache *p_renderer_cache) const {
 	if (is_transparent()) {
 		material->set_render_priority(CLAMP(transparent_sort_override, -128, 127));
+	}
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		material->set_shader_parameter("in_unit_pixel_size", PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size());
 	}
 	if (blend_mode == BlendMode::MASKED) {
 		material->set_shader_parameter("in_mask_threshold", mask_threshold);
@@ -382,6 +446,7 @@ void PKShaderMaterial::bind_material_properties(const PKRendererCache *p_rendere
 
 bool PKShaderMaterial::operator==(const PKShaderMaterial &p_other) const {
 	return renderer_type == p_other.renderer_type &&
+			render_mode == p_other.render_mode &&
 			blend_mode == p_other.blend_mode &&
 			variation_flags == p_other.variation_flags &&
 			transparent_sort_override == p_other.transparent_sort_override &&

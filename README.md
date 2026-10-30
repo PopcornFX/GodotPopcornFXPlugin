@@ -3,9 +3,9 @@
 > /!\ **Alpha version** — Expect bugs and missing or broken features. Use at your own risk and feel free to report any issues you encounter.
 
 Integrates the **PopcornFX Runtime SDK** into **Godot** as a GDExtension.
-* **Version:** `2.24.7`
+* **Version:** `2.24.8`
 * **Godot:** `4.5` and `4.6`
-* **Godot-cpp:** `10.0.0-rc1`
+* **Godot-cpp:** `cedbd9e71b24eb2898b28867c5faf6114da9e5e2`
 * **Supported platforms:** `Windows`, `MacOS`, `Linux`, `iOS`, `Android`
 
 ## Setup

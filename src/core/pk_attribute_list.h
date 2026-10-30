@@ -4,7 +4,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
-#include "godot_cpp/classes/ref_counted.hpp"
+#include "godot_cpp/classes/node2d.hpp"
 #include "godot_cpp/classes/resource.hpp"
 #include "godot_cpp/core/object.hpp"
 
@@ -12,6 +12,9 @@
 #include "core/samplers/pk_attribute_sampler.h"
 #include "integration/pk_sdk.h"
 #include "pk_register_types.h"
+#include "scene/pk_emitter_2d.h"
+#include "scene/pk_emitter_3d.h"
+#include "scene/pk_emitter_control.h"
 
 #include <pk_particles/include/ps_attributes.h>
 
@@ -58,11 +61,13 @@ protected:
 
 class PKAttributeList : public Resource {
 	GDCLASS(PKAttributeList, Resource);
-	friend class PKEmitter3D;
+	friend class PKEmitter<Node3D>;
+	friend class PKEmitter<Node2D>;
+	friend class PKEmitter<Control>;
 
 public:
 	PKAttributeList();
-	static Ref<PKAttributeList> default_for_emitter(PKEmitter3D *p_emitter);
+	static Ref<PKAttributeList> default_for_emitter(Node *p_emitter);
 
 	DEFINE_BASIC_PROPERTY(Ref<PKEffect>, effect)
 	DEFINE_BASIC_PROPERTY(TypedArray<PKAttributeDesc>, attribute_descs)
@@ -70,9 +75,12 @@ public:
 	DEFINE_BASIC_PROPERTY(TypedArray<PKAttributeSamplerDesc>, attribute_sampler_descs)
 
 	TypedArray<PKAttributeSampler> attribute_samplers;
-	PKEmitter3D *emitter;
 
-	void set_emitter(PKEmitter3D *p_emitter);
+	void set_emitter(Node *p_emitter);
+	PKEmitter3D *get_emitter_3d() const { return cast_to<PKEmitter3D>(emitter); }
+	PKEmitter2D *get_emitter_2d() const { return cast_to<PKEmitter2D>(emitter); }
+	PKEmitterControl *get_emitter_control() const { return cast_to<PKEmitterControl>(emitter); }
+
 	void set_attribute_samplers(TypedArray<PKAttributeSampler> p_attribute_samplers);
 	TypedArray<PKAttributeSampler> get_attribute_samplers() const {
 		return attribute_samplers;
@@ -85,8 +93,6 @@ public:
 	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(uint32_t p_id) const;
 	Ref<PKAttributeDesc> get_attribute_desc(const String &p_name) const;
 	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc(const String &p_name) const;
-	Ref<PKAttributeDesc> get_attribute_desc_by_uid(uint32_t p_uid) const;
-	Ref<PKAttributeSamplerDesc> get_attribute_sampler_desc_by_uid(uint32_t p_uid) const;
 
 	void resolve_effect_change();
 	void resolve_attribute_change(const CParticleAttributeDeclaration *p_decl, Ref<PKAttributeDesc> p_old_desc, SAttributesContainer_SAttrib &r_value) const;
@@ -108,7 +114,8 @@ public:
 	template <typename S>
 	const Ref<S> get_attribute_sampler_or_default(const String &p_name) {
 		ERR_FAIL_COND_V(emitter == nullptr, nullptr);
-		const CGuid id = emitter->effect->get_effect()->GetAttributeSamplerID(p_name.utf8().ptr());
+		Ref<PKEffect> effect = emitter->call("get_effect");
+		const CGuid id = effect->get_effect()->GetAttributeSamplerID(p_name.utf8().ptr());
 		ERR_FAIL_COND_V(id == CGuid::INVALID, nullptr);
 		return get_attribute_sampler_or_default<S>(id);
 	}
@@ -149,14 +156,16 @@ protected:
 private:
 	static bool _check_type_matches(const Variant &p_variant, EBaseTypeID p_type);
 	bool _check_effect_valid() const;
-	bool _is_instance_valid() const;
+	bool _check_instance_valid() const;
 
 	String _get_sampler_configuration_warnings(int p_sampler_id) const;
 
+	PParticleEffectInstance _get_effect_instance() const;
 	void _connect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 	void _disconnect_attribute_sampler(uint32_t p_id, Ref<PKAttributeSampler> p_sampler);
 
 	bool ready = false;
+	Node *emitter = nullptr;
 };
 
 } // namespace godot

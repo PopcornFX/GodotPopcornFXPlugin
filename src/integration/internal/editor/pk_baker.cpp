@@ -120,7 +120,7 @@ bool PKBaker::initialize_ifn() {
 	cookery.SetHBOContext(bake_context->bake_context); // init m_Cookery with correct context
 
 	PKPlugin *plugin = PKPlugin::get_singleton();
-	const CString root_dir = plugin->get_processed_project_settings()->get_source_pack_root_dir();
+	const CString root_dir = plugin->get_project_settings()->source_pack_root_dir();
 	bake_context->bake_fs_controller->MountPack(root_dir);
 
 	if (!cookery.TurnOn()) {
@@ -197,7 +197,7 @@ bool PKBaker::initialize_ifn() {
 	bake_config->SetCompile(true);
 	bake_config->SetRemoveEditorNodes(true);
 
-	const bool debug_baked_effects = PKPlugin::get_singleton()->get_processed_project_settings()->settings().debug_baked_effects;
+	const bool debug_baked_effects = PKPlugin::get_singleton()->get_project_settings()->settings().debug_baked_effects;
 	bake_config->SetBakeMode(debug_baked_effects ? COvenBakeConfig_HBO::Bake_SaveAsText : COvenBakeConfig_HBO::Bake_SaveAsBinary);
 
 	// build versions
@@ -225,7 +225,7 @@ bool PKBaker::bake_effect(const CString &p_src_file_path, const CString &r_file_
 	const SBakeTarget default_target("Godot_Generic", out_dir);
 
 	PKPlugin *plugin = PKPlugin::get_singleton();
-	const CString root_dir = plugin->get_processed_project_settings()->get_source_pack_root_dir();
+	const CString root_dir = plugin->get_project_settings()->source_pack_root_dir();
 
 	if (cookery.m_DstPackPaths.Count() == 0) {
 		cookery.m_DstPackPaths.PushBack(default_target);
@@ -237,7 +237,7 @@ bool PKBaker::bake_effect(const CString &p_src_file_path, const CString &r_file_
 		CLog::Log(PK_ERROR, "Failed baking effect '%s' for '%s'%s", rel_src_file_path.Data(), p_target_platform_name.Data(), !baker_messages.Messages().Empty() ? ":" : ".");
 		_log_baker_messages(baker_messages, CMessageStream::Warning);
 		return false;
-	} else if (PKPlugin::get_singleton()->get_processed_project_settings()->settings().debug_baked_effects) {
+	} else if (PKPlugin::get_singleton()->get_project_settings()->settings().debug_baked_effects) {
 		_log_baker_messages(baker_messages, CMessageStream::Info);
 	}
 

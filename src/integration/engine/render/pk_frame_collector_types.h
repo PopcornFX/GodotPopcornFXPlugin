@@ -14,4 +14,5 @@ using namespace godot;
 
 struct PKRenderContext : SRenderContext {
 	RID scenario_id;
+	RID canvas_id;
 };

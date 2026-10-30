@@ -4,6 +4,7 @@
 //----------------------------------------------------------------------------
 #include "pk_manager.h"
 
+#include "godot_cpp/classes/camera2d.hpp"
 #include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/file_access.hpp"
@@ -13,6 +14,7 @@
 #include "godot_cpp/classes/resource_loader.hpp"
 #include "godot_cpp/classes/scene_tree.hpp"
 #include "godot_cpp/classes/window.hpp"
+#include "godot_cpp/classes/world2d.hpp"
 #include "godot_cpp/classes/world3d.hpp"
 #include "godot_cpp/core/error_macros.hpp"
 
@@ -28,6 +30,7 @@
 #include "integration/internal/pk_project_settings.h"
 #include "integration/internal/pk_scene.h"
 #include "integration/pk_plugin.h"
+#include "scene/pk_emitter_2d.h"
 
 using namespace godot;
 
@@ -83,20 +86,33 @@ void PKManager::_integrate_into_engine(bool p_in_editor) {
 
 void PKManager::_integrate_into_scene_tree() {
 	const SceneTree *scene_tree = cast_to<SceneTree>(Engine::get_singleton()->get_main_loop());
-	// Not safe but we'll use it safely (promise)
-	PKPlugin::get_singleton()->get_scene()->state = scene_tree->get_root()->get_world_3d()->get_direct_space_state();
 	Window *scene_root = scene_tree->get_root();
+	// Not safe but we'll use it safely (promise)
+	PKPlugin::get_singleton()->get_scene_3d()->state_3d = scene_root->get_world_3d()->get_direct_space_state();
+	PKPlugin::get_singleton()->get_scene_2d()->state_2d = scene_root->get_world_2d()->get_direct_space_state();
 
 	scene_root->add_child(this);
 	scene_root->move_child(this, 0);
 	set_process(true);
 }
 
-const Viewport *PKManager::_get_viewport() const {
+const Viewport *PKManager::_get_viewport_3d() const {
 	const Viewport *vp = nullptr;
 #ifdef TOOLS_ENABLED
 	if (Engine::get_singleton()->is_editor_hint()) {
 		vp = EditorInterface::get_singleton()->get_editor_viewport_3d();
+	} else
+#endif
+		vp = get_viewport();
+	ERR_FAIL_COND_V(vp == nullptr, nullptr);
+	return vp;
+}
+
+const Viewport *PKManager::_get_viewport_2d() const {
+	const Viewport *vp = nullptr;
+#ifdef TOOLS_ENABLED
+	if (Engine::get_singleton()->is_editor_hint()) {
+		vp = EditorInterface::get_singleton()->get_editor_viewport_2d();
 	} else
 #endif
 		vp = get_viewport();
@@ -169,7 +185,7 @@ static constexpr uint32_t get_total_pyramid_size(const uint32_t p_first_level_si
 // And that the buffer already contains the base data, including its borders.
 static bool build_audio_pyramid(float *p_buffer, LocalVector<const float *> &p_pyramid, const uint32_t p_base_buffer_size) {
 	PKGD_ASSERT(p_buffer != nullptr);
-	PKGD_ASSERT(is_power_of_2(p_base_buffer_size));
+	PKGD_ASSERT(Math::is_power_of_2(p_base_buffer_size));
 
 	const uint32_t pyramid_height = get_pyramid_height(p_base_buffer_size);
 	p_pyramid.resize(pyramid_height);
@@ -213,14 +229,29 @@ _FORCE_INLINE_ void PKManager::AudioBufferDescriptor::resize(const uint32_t p_ba
 }
 
 void PKManager::_process(double p_delta) {
-	const Viewport *vp = _get_viewport();
-
-	const Camera3D *camera = vp->get_camera_3d();
-	if (camera == nullptr) {
-		return;
+	const Viewport *vp_3d = _get_viewport_3d();
+	if (vp_3d != nullptr) {
+		const Camera3D *camera_3d = vp_3d->get_camera_3d();
+		if (camera_3d != nullptr) {
+			PKPlugin::get_singleton()->update_3d(p_delta, camera_3d->get_camera_transform().inverse(), camera_3d->get_camera_projection());
+		}
 	}
 
-	PKPlugin::get_singleton()->update(p_delta, camera->get_camera_transform().inverse(), camera->get_camera_projection());
+	const Viewport *vp_2d = _get_viewport_2d();
+	if (vp_2d != nullptr) {
+		const Camera2D *camera_2d = vp_2d->get_camera_2d();
+		if (camera_2d != nullptr) {
+			Transform2D transform;
+			transform.columns[2] = -camera_2d->get_screen_center_position();
+			PKPlugin::get_singleton()->update_2d(p_delta, transform);
+		} else {
+			Transform2D transform;
+			const Vector2 screen_center = vp_2d->get_visible_rect().size / 2.0;
+			transform.columns[2] = -vp_2d->get_global_canvas_transform().affine_inverse().xform(screen_center);
+			PKPlugin::get_singleton()->update_2d(p_delta, transform);
+		}
+	}
+
 	RenderingServer::get_singleton()->call_on_render_thread(callable_mp(this, &PKManager::render));
 
 	// update the audio buffers each frame
@@ -233,21 +264,61 @@ void PKManager::_exit_tree() {
 }
 
 void PKManager::render() {
-	const Viewport *vp = _get_viewport();
-
-	const Ref<World3D> world3d = vp->find_world_3d();
-	ERR_FAIL_COND(world3d.is_null());
-
-	const RID scenario_id = world3d->get_scenario();
-	ERR_FAIL_COND(!scenario_id.is_valid());
-
-	PKPlugin::get_singleton()->render(scenario_id);
+	render_3d();
+	render_2d();
 }
 
-Node3D *godot::PKManager::get_current_audio_listener_3D() { // TODO modify when 2D
-	Node3D *res = reinterpret_cast<Node3D *>(_get_viewport()->get_audio_listener_3d());
+void PKManager::render_3d() {
+	const Viewport *vp_3d = _get_viewport_3d();
+	ERR_FAIL_NULL(vp_3d);
+
+	const Ref<World3D> world3d = vp_3d->find_world_3d();
+	ERR_FAIL_COND(world3d.is_null());
+
+	const RID scenario_id_3d = world3d->get_scenario();
+	ERR_FAIL_COND(!scenario_id_3d.is_valid());
+
+	PKPlugin::get_singleton()->render_3d(scenario_id_3d);
+}
+
+void PKManager::render_2d() {
+	const Viewport *vp_2d = _get_viewport_2d();
+	ERR_FAIL_NULL(vp_2d);
+
+	const Ref<World2D> world2d = vp_2d->find_world_2d();
+	ERR_FAIL_COND(world2d.is_null());
+
+	const RID canvas_id = world2d->get_canvas();
+	ERR_FAIL_COND(!canvas_id.is_valid());
+
+	PKPlugin::get_singleton()->render_2d(canvas_id);
+}
+
+void PKManager::set_effect_z_index(const String &p_effect_path, int p_z_index) {
+	PK_SCOPEDLOCK_WRITE(z_index_lock)
+	z_indexes[p_effect_path] = p_z_index;
+}
+
+int PKManager::get_effect_z_index(const String &p_effect_path) {
+	PK_SCOPEDLOCK_READ(z_index_lock)
+	if (z_indexes.has(p_effect_path)) {
+		return z_indexes[p_effect_path];
+	}
+	return 0;
+}
+
+Node3D *godot::PKManager::get_current_audio_listener_3D() {
+	Node3D *res = reinterpret_cast<Node3D *>(_get_viewport_3d()->get_audio_listener_3d());
 	if (!res) {
-		res = reinterpret_cast<Node3D *>(_get_viewport()->get_camera_3d());
+		res = reinterpret_cast<Node3D *>(_get_viewport_3d()->get_camera_3d());
+	}
+	return res;
+}
+
+Node2D *godot::PKManager::get_current_audio_listener_2D() {
+	Node2D *res = reinterpret_cast<Node2D *>(_get_viewport_2d()->get_audio_listener_2d());
+	if (!res) {
+		res = reinterpret_cast<Node2D *>(_get_viewport_2d()->get_camera_2d());
 	}
 	return res;
 }
@@ -259,6 +330,11 @@ Node *PKManager::find_suitable_parent_for_audio_pool_sources() {
 
 PKManager::~PKManager() {
 	if (singleton) {
+		sound_loaded.clear();
+		audiosampling_lock->lock();
+		cached_audio_waveform_buffers.clear();
+		cached_audio_spectrum_buffers.clear();
+		audiosampling_lock->unlock();
 		if (singleton == this) {
 			singleton = nullptr;
 		} else {
@@ -418,6 +494,8 @@ void PKManager::_update_settings() {
 	// Editor
 	_add_setting_ifn(Variant::STRING, "popcornfx/editor/source_pack", PROPERTY_HINT_FILE, "*.pkproj", "res://", true, false);
 	_add_setting_ifn(Variant::BOOL, "popcornfx/editor/debug_baked_effects", PROPERTY_HINT_NONE, "", false, true, false);
+	// 2D
+	_add_setting_ifn(Variant::FLOAT, "popcornfx/2d/unit_pixel_size", PROPERTY_HINT_NONE, "", 100, true, false);
 	// Export
 	_add_setting_ifn(Variant::BOOL, "popcornfx/export/raw_export_dependencies", PROPERTY_HINT_NONE, "", true, false, false);
 	// Internal
@@ -431,13 +509,16 @@ void PKManager::_update_settings() {
 	pkfx_settings.debug_baked_effects = settings->get_setting("popcornfx/editor/debug_baked_effects");
 #endif
 	pkfx_settings.source_pack_root = settings->get_setting("popcornfx/internal/source_pack_root");
+	pkfx_settings.unit_pixel_size = settings->get_setting("popcornfx/2d/unit_pixel_size");
 
 	pkfx_plugin->set_project_settings(pkfx_settings);
 
 	PKEmitter3D::default_transform_mode = PKEmitter3D::TransformMode(int(settings->get_setting("popcornfx/runtime/default_emitter_transform_mode")) + 1);
+	PKEmitter2D::default_transform_mode = PKEmitter2D::TransformMode(int(settings->get_setting("popcornfx/runtime/default_emitter_transform_mode")) + 1);
+	PKEmitterControl::default_transform_mode = PKEmitterControl::TransformMode(int(settings->get_setting("popcornfx/runtime/default_emitter_transform_mode")) + 1);
 
 	// Set this hidden setting so that in a packaged build we know where the effects are
 #if TOOLS_ENABLED
-	settings->set_setting("popcornfx/internal/source_pack_root", to_gd(pkfx_plugin->get_processed_project_settings()->get_source_pack_root_dir()));
+	settings->set_setting("popcornfx/internal/source_pack_root", to_gd(pkfx_plugin->get_project_settings()->source_pack_root_dir()));
 #endif
 }
