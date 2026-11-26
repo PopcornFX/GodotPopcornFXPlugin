@@ -45,6 +45,7 @@ bool PKBatchDrawerMeshCPU::Setup(const CRendererDataBase *p_renderer, const CPar
 	}
 
 	RS *rs = RS::get_singleton();
+	rd = rs->get_rendering_device();
 
 	// Create material
 	shader_mat = &owner_scene->get_or_create_shader_material(p_renderer);
@@ -128,7 +129,11 @@ bool PKBatchDrawerMeshCPU::AllocBuffers(SRenderContext &p_ctx) {
 		transform_width = 8;
 		transform_format = RS::MULTIMESH_TRANSFORM_2D;
 	}
-	instanced_transforms.resize(particle_count * sizeof(float) * transform_width);
+	if (rd != nullptr) {
+		instanced_transforms_rd.resize(particle_count * sizeof(float) * transform_width);
+	} else {
+		instanced_transforms_compat.resize(particle_count * transform_width);
+	}
 
 	RS::get_singleton()->multimesh_allocate_data(multimesh, particle_count, transform_format);
 
@@ -210,7 +215,7 @@ bool PKBatchDrawerMeshCPU::MapBuffers(SRenderContext &p_ctx) {
 }
 
 bool PKBatchDrawerMeshCPU::UnmapBuffers(SRenderContext &p_ctx) {
-	float *mapped_transforms = reinterpret_cast<float *>(instanced_transforms.ptrw());
+	float *mapped_transforms = rd != nullptr ? reinterpret_cast<float *>(instanced_transforms_rd.ptrw()) : instanced_transforms_compat.ptrw();
 	const CFloat4x4 *matrices_ptr = instanced_matrices.RawDataPointer();
 	if (render_mode == PKRender::RENDER_MODE_3D) {
 		for (uint32_t i = 0; i < particle_count; ++i) {
@@ -288,8 +293,13 @@ bool PKBatchDrawerMeshCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCallDe
 	rs->multimesh_set_custom_aabb(multimesh, mesh_bbox);
 
 	// Directly update the multimesh's GPU instance transforms buffer with our data
-	const RID instances_buffer = rs->multimesh_get_buffer_rd_rid(multimesh);
-	rs->get_rendering_device()->buffer_update(instances_buffer, 0, instanced_transforms.size(), instanced_transforms);
+	if (rd != nullptr) {
+		const RID instances_buffer = rs->multimesh_get_buffer_rd_rid(multimesh);
+		rd->buffer_update(instances_buffer, 0, instanced_transforms_rd.size(), instanced_transforms_rd);
+	} else {
+		// Compatibility or headless.
+		rs->multimesh_set_buffer(multimesh, instanced_transforms_compat);
+	}
 
 	// Set shader parameters
 	shader_mat->bind_material_properties(renderer_cache);
@@ -337,6 +347,10 @@ String PKBatchDrawerMeshCPU::_get_additional_stream_offset_name(AdditionalStream
 			return "uv_rotations";
 		case STREAM_OFFSET_TRANSFORM_UVS_SCALES:
 			return "uv_scales";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1:
+			return "alpha_mask_1_animation_cursor";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2:
+			return "alpha_mask_2_animation_cursor";
 		default:
 			return "";
 	}
@@ -369,6 +383,10 @@ bool PKBatchDrawerMeshCPU::_is_additional_input_supported(const CStringId &p_inp
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;
 		} else if (p_input_name == BasicRendererProperties::SID_TransformUVs_UVRotate()) {
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_ROTATES;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask1AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask2AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2;
 		}
 	}
 	return r_stream_offset_type != AdditionalStreamOffsets::STREAM_OFFSET_MAX;

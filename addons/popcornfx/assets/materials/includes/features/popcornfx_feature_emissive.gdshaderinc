@@ -39,10 +39,19 @@ void pk_frag_emissive(out vec3 r_emission, FragSamplingParams p_params)
 		tex_val_emissive = mix(tex_val_emissive, tex_val_emissive2, p_params.blend_mix);
 	#endif
 
-	r_emission = var_emissive_color.rgb * tex_val_emissive.rgb * var_emissive_color.a * tex_val_emissive.a;
-
 	#ifdef PK_HAS_EMISSIVE_RAMP
-		r_emission.rgb = texture(in_tex_emissive_ramp, vec2(r_emission.r, 0.0)).rgb;
+		r_emission = tex_val_emissive.rgb;
+	#else
+		r_emission = var_emissive_color.rgb * tex_val_emissive.rgb * var_emissive_color.a * tex_val_emissive.a;
 	#endif
 }
+
+#ifdef PK_HAS_EMISSIVE_RAMP
+void pk_frag_apply_emissive_ramp(inout vec3 r_emission) {
+	r_emission.rgb = texture(in_tex_emissive_ramp, vec2(r_emission.x, 0.0)).rgb;
+
+	r_emission = var_emissive_color.rgb * var_emissive_color.a * r_emission.rgb;
+}
+#endif
+
 #endif

@@ -153,6 +153,8 @@ void PKScene::update(float p_delta_time, CFloat4x4 &p_mat_wv, CFloat4x4 &p_mat_w
 }
 
 void PKScene::RayTracePacket(const Colliders::STraceFilter &p_trace_filter, const Colliders::SRayPacket &p_packet, const Colliders::STracePacket &p_results) {
+	const uint32_t collision_mask = p_trace_filter.m_FilterFlags != 0 ? p_trace_filter.m_FilterFlags : UINT32_MAX;
+
 	if (state_3d != nullptr) {
 		for (int i = 0; i < p_results.m_PacketSize; i++) {
 			const Vector3 origin = to_gd(p_packet.m_RayOrigins_Aligned16[i].xyz());
@@ -161,7 +163,7 @@ void PKScene::RayTracePacket(const Colliders::STraceFilter &p_trace_filter, cons
 			const Vector3 to = origin + direction * length;
 			// Note: We're ignoring the radius parameter for now. If you want to implement swept-sphere casts, look into the ShapeCast3D node
 
-			const Dictionary result = state_3d->intersect_ray(PhysicsRayQueryParameters3D::create(origin, to));
+			const Dictionary result = state_3d->intersect_ray(PhysicsRayQueryParameters3D::create(origin, to, collision_mask));
 			if (result.is_empty()) {
 				continue;
 			}
@@ -189,7 +191,7 @@ void PKScene::RayTracePacket(const Colliders::STraceFilter &p_trace_filter, cons
 			const float length = p_packet.m_RayDirectionsAndLengths_Aligned16[i].w();
 			Vector2 to = origin + direction * length;
 
-			const Dictionary result = state_2d->intersect_ray(PhysicsRayQueryParameters2D::create(origin, to));
+			const Dictionary result = state_2d->intersect_ray(PhysicsRayQueryParameters2D::create(origin, to, collision_mask));
 			if (result.is_empty()) {
 				continue;
 			}

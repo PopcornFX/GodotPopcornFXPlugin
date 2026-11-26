@@ -4,9 +4,7 @@
 //----------------------------------------------------------------------------
 #pragma once
 
-#include "godot_cpp/classes/rd_texture_format.hpp"
-#include "godot_cpp/classes/rd_texture_view.hpp"
-#include "godot_cpp/classes/texture2drd.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/rid.hpp"
 
 using namespace godot;
@@ -38,12 +36,13 @@ public:
 	bool is_valid() const { return _is_init() && tex.is_valid(); }
 	bool is_empty() const { return !is_valid() || capacity_in_bytes() == 0; }
 	uint32_t capacity_in_bytes() const;
-	Ref<Texture2DRD> get_srv() const;
+	RID get_srv() const;
 
 private:
-	bool _is_init() const { return format.is_valid() && view.is_valid() && srv.is_valid(); }
+	bool _is_init() const { return initialized; }
 	void _resize_data();
 
+	bool initialized = false;
 	uint32_t mapping_counter = 0;
 
 	// CPU data which gets written to
@@ -52,12 +51,5 @@ private:
 	// Low-level GPU texture to which CPU data gets copied
 	RID tex;
 
-	// Format of the GPU texture (hardcoded to float1 pixel format)
-	Ref<RDTextureFormat> format;
-
-	// High-level texture object used to wrap our texture RID (to be used as a ShaderMaterial parameter)
-	Ref<Texture2DRD> srv;
-
-	// Image view for the texture (only used by RenderingDevice internally)
-	Ref<RDTextureView> view;
+	uint32_t size = 0;
 };

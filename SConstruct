@@ -7,7 +7,7 @@ from misc.pk_vsproj import generate_vs_project
 from misc.pk_platform_methods import create_macos_universal_libs, PlatformPaths
 from misc.pk_platform_methods import combine_ios_libs, create_ios_xcframework
 
-POPCORNFX_VERSION = "2.24.8"
+POPCORNFX_VERSION = "2.24.9"
 POPCORNFX_LICENSE = "Godot"
 
 def link_popcornfx(bin_dir):
@@ -109,6 +109,9 @@ def link_popcornfx(bin_dir):
 
         if env["dev_build"] == True:
             pk_platform_libs.extend(["bfd"])
+
+        if env.editor_build:
+            pk_platform_libs.extend(["z"]) # For Freetype
 
         pk_platform_freetype = "linux64"
 

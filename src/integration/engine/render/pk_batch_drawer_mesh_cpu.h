@@ -5,6 +5,9 @@
 #pragma once
 
 #include "godot_cpp/classes/multi_mesh.hpp"
+#include "godot_cpp/classes/rendering_device.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
+#include "godot_cpp/variant/packed_float32_array.hpp"
 #include "godot_cpp/variant/rid.hpp"
 
 #include "core/pk_buffer.h"
@@ -45,6 +48,8 @@ private:
 		STREAM_OFFSET_TRANSFORM_UVS_OFFSETS,
 		STREAM_OFFSET_TRANSFORM_UVS_ROTATES,
 		STREAM_OFFSET_TRANSFORM_UVS_SCALES,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2,
 		STREAM_OFFSET_MAX
 	};
 
@@ -67,7 +72,9 @@ private:
 #endif
 
 	TArray<CFloat4x4, TArrayStaticController<32>> instanced_matrices;
-	PackedByteArray instanced_transforms;
+	RenderingDevice *rd = nullptr;
+	PackedByteArray instanced_transforms_rd;
+	PackedFloat32Array instanced_transforms_compat;
 
 	PKBuffer sim_data;
 	TArray<PKAdditionalInput> additional_inputs;

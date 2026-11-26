@@ -25,6 +25,7 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	PKShaderMaterial shader_mat;
 	shader_mat.init_from_renderer(*p_renderer, PKRender::RENDER_MODE_3D);
 
+	m_Flags.m_HasRawUV0 = false;
 	m_Flags.m_HasUV = true;
 	m_Flags.m_FlipU = false;
 	m_Flags.m_FlipV = false;
@@ -37,6 +38,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	m_Flags.m_Slicable = false; // TODO
 
 	if (p_renderer->m_RendererType == PopcornFX::Renderer_Billboard) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_FlipUVs())) { // Legacy
 			m_Flags.m_FlipU = false;
 			m_Flags.m_FlipV = true;
@@ -56,6 +61,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	}
 
 	else if (p_renderer->m_RendererType == PopcornFX::Renderer_Ribbon) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.GetPropertyValue_B(PopcornFX::BasicRendererProperties::SID_TextureUVs_FlipU(), false) ||
 				p_renderer->m_Declaration.GetPropertyValue_B(PopcornFX::BasicRendererProperties::SID_BasicTransformUVs_FlipU(), false)) {
 			m_Flags.m_FlipU = true;
@@ -75,6 +84,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	}
 
 	else if (p_renderer->m_RendererType == PopcornFX::Renderer_Triangle) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_BasicTransformUVs_FlipU())) {
 			m_Flags.m_FlipU = true;
 		}
@@ -117,7 +130,7 @@ bool PKRendererCache::UpdateThread_LoadRendererAtlas(const PRendererDataBase &p_
 	return true;
 }
 
-Ref<Texture2DRD> PKRendererCache::get_atlas_rects_srv() const {
+RID PKRendererCache::get_atlas_rects_srv() const {
 	return atlas_rects.get_srv();
 }
 

@@ -203,7 +203,8 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer, P
 					break;
 			}
 		} else { // New materials
-			blend_mode = BlendMode::ALPHA_BLEND; // TODO: Should be PREMUL_ALPHA and decided in shaders
+			blend_mode = BlendMode::PREMUL_ALPHA;
+			set_variation_flag(VariationFlags::DOUBLE_SIDED);
 		}
 		transparent_sort_override = decl.GetPropertyValue_I1(BasicRendererProperties::SID_Transparent_GlobalSortOverride(), 0);
 		transparent_sort_offset = decl.GetPropertyValue_F1(BasicRendererProperties::SID_Transparent_CameraSortOffset(), 0);
@@ -264,13 +265,34 @@ void PKShaderMaterial::init_from_renderer(const CRendererDataBase &p_renderer, P
 	// Transform UVs
 	if (decl.IsFeatureEnabled(BasicRendererProperties::SID_TransformUVs())) {
 		set_variation_flag(VariationFlags::TRANSFORM_UVS);
-		transform_uvs_rgb_only = decl.GetPropertyValue_B(BasicRendererProperties::SID_TransformUVs_RGBOnly(), false);
+		transform_uv_rgb_only = decl.GetPropertyValue_B(BasicRendererProperties::SID_TransformUVs_RGBOnly(), false);
+		transform_uv_rotation_center = to_gd(decl.GetPropertyValue_F2(CStringId("TransformUVs.RotationCenter"), CFloat2(0.5f, 0.5f))); // TODO use a proper method from BasicRendererProperties to retrieve the rotation center
 	}
 
 	// Alpha remap
 	if (decl.IsFeatureEnabled(BasicRendererProperties::SID_AlphaRemap())) {
 		set_variation_flag(VariationFlags::ALPHA_REMAP);
 		tex_alpha_remap = load_texture_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_AlphaRemap_AlphaMap(), CString::EmptyString));
+	}
+
+	// Alpha masks
+	if (decl.IsFeatureEnabled(BasicRendererProperties::SID_AlphaMasks())) {
+		set_variation_flag(VariationFlags::ALPHA_MASKS);
+
+		alpha_mask_1_intensity = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask1Intensity(), 1.0f);
+		alpha_mask_1_weight = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask1Weight(), 1.0f);
+		alpha_mask_1_scale = to_gd(decl.GetPropertyValue_F2(BasicRendererProperties::SID_AlphaMasks_Mask1Scale(), CFloat2::ONE));
+		alpha_mask_1_rotation_speed = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask1RotationSpeed(), 0.0f);
+		alpha_mask_1_translation_speed = to_gd(decl.GetPropertyValue_F2(BasicRendererProperties::SID_AlphaMasks_Mask1TranslationSpeed(), CFloat2::ZERO));
+
+		alpha_mask_2_intensity = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask2Intensity(), 1.0f);
+		alpha_mask_2_weight = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask2Weight(), 1.0f);
+		alpha_mask_2_scale = to_gd(decl.GetPropertyValue_F2(BasicRendererProperties::SID_AlphaMasks_Mask2Scale(), CFloat2::ONE));
+		alpha_mask_2_rotation_speed = decl.GetPropertyValue_F1(BasicRendererProperties::SID_AlphaMasks_Mask2RotationSpeed(), 0.0f);
+		alpha_mask_2_translation_speed = to_gd(decl.GetPropertyValue_F2(BasicRendererProperties::SID_AlphaMasks_Mask2TranslationSpeed(), CFloat2::ZERO));
+
+		tex_alpha_mask_1_map = load_texture_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_AlphaMasks_Mask1Map(), CString::EmptyString));
+		tex_alpha_mask_2_map = load_texture_pk(decl.GetPropertyValue_Path(BasicRendererProperties::SID_AlphaMasks_Mask2Map(), CString::EmptyString));
 	}
 
 	// Soft particles
@@ -422,6 +444,22 @@ void PKShaderMaterial::bind_material_properties(const PKRendererCache *p_rendere
 	if (has_variation_flag(VariationFlags::ALPHA_REMAP)) {
 		material->set_shader_parameter("in_tex_alpha_remap", tex_alpha_remap);
 	}
+	if (has_variation_flag(VariationFlags::ALPHA_MASKS)) {
+		material->set_shader_parameter("in_alpha_mask_1_intensity", alpha_mask_1_intensity);
+		material->set_shader_parameter("in_alpha_mask_1_weight", alpha_mask_1_weight);
+		material->set_shader_parameter("in_alpha_mask_1_scale", alpha_mask_1_scale);
+		material->set_shader_parameter("in_alpha_mask_1_rotation_speed", alpha_mask_1_rotation_speed);
+		material->set_shader_parameter("in_alpha_mask_1_translation_speed", alpha_mask_1_translation_speed);
+
+		material->set_shader_parameter("in_alpha_mask_2_intensity", alpha_mask_2_intensity);
+		material->set_shader_parameter("in_alpha_mask_2_weight", alpha_mask_2_weight);
+		material->set_shader_parameter("in_alpha_mask_2_scale", alpha_mask_2_scale);
+		material->set_shader_parameter("in_alpha_mask_2_rotation_speed", alpha_mask_2_rotation_speed);
+		material->set_shader_parameter("in_alpha_mask_2_translation_speed", alpha_mask_2_translation_speed);
+
+		material->set_shader_parameter("in_tex_alpha_mask_1_map", tex_alpha_mask_1_map);
+		material->set_shader_parameter("in_tex_alpha_mask_2_map", tex_alpha_mask_2_map);
+	}
 	if (has_variation_flag(VariationFlags::LIGHTING)) {
 		material->set_shader_parameter("in_roughness", roughness);
 		material->set_shader_parameter("in_metalness", metalness);
@@ -437,7 +475,8 @@ void PKShaderMaterial::bind_material_properties(const PKRendererCache *p_rendere
 		material->set_shader_parameter("in_tex_atlas_mv", tex_motion_vectors);
 	}
 	if (has_variation_flag(VariationFlags::TRANSFORM_UVS)) {
-		material->set_shader_parameter("in_transform_uvs_rgb_only", transform_uvs_rgb_only);
+		material->set_shader_parameter("in_transform_uv_rgb_only", transform_uv_rgb_only);
+		material->set_shader_parameter("in_transform_uv_rotation_center", transform_uv_rotation_center);
 	}
 	if (has_variation_flag(VariationFlags::SOFT_PARTICLES)) {
 		material->set_shader_parameter("in_softness_distance", softness_distance);
@@ -458,8 +497,19 @@ bool PKShaderMaterial::operator==(const PKShaderMaterial &p_other) const {
 			atlas_sub_div_y == p_other.atlas_sub_div_y &&
 			mv_distortion_strength_columns == p_other.mv_distortion_strength_columns &&
 			mv_distortion_strength_rows == p_other.mv_distortion_strength_rows &&
+			alpha_mask_1_intensity == p_other.alpha_mask_1_intensity &&
+			alpha_mask_1_weight == p_other.alpha_mask_1_weight &&
+			alpha_mask_1_scale == p_other.alpha_mask_1_scale &&
+			alpha_mask_1_rotation_speed == p_other.alpha_mask_1_rotation_speed &&
+			alpha_mask_1_translation_speed == p_other.alpha_mask_1_translation_speed &&
+			alpha_mask_2_intensity == p_other.alpha_mask_2_intensity &&
+			alpha_mask_2_weight == p_other.alpha_mask_2_weight &&
+			alpha_mask_2_scale == p_other.alpha_mask_2_scale &&
+			alpha_mask_2_rotation_speed == p_other.alpha_mask_2_rotation_speed &&
+			alpha_mask_2_translation_speed == p_other.alpha_mask_2_translation_speed &&
 			softness_distance == p_other.softness_distance &&
-			transform_uvs_rgb_only == p_other.transform_uvs_rgb_only &&
+			transform_uv_rgb_only == p_other.transform_uv_rgb_only &&
+			transform_uv_rotation_center == p_other.transform_uv_rotation_center &&
 			cast_shadows == p_other.cast_shadows &&
 			tex_diffuse == p_other.tex_diffuse &&
 			tex_diffuse_ramp == p_other.tex_diffuse_ramp &&
@@ -469,6 +519,8 @@ bool PKShaderMaterial::operator==(const PKShaderMaterial &p_other) const {
 			tex_rough_metal == p_other.tex_rough_metal &&
 			tex_specular == p_other.tex_specular &&
 			tex_alpha_remap == p_other.tex_alpha_remap &&
+			tex_alpha_mask_1_map == p_other.tex_alpha_mask_1_map &&
+			tex_alpha_mask_2_map == p_other.tex_alpha_mask_2_map &&
 			tex_motion_vectors == p_other.tex_motion_vectors &&
 			mesh == p_other.mesh;
 }

@@ -148,11 +148,20 @@ bool PKBatchDrawerBillboardCPU::AllocBuffers(SRenderContext &p_ctx) {
 	if (_should_gen_input(Drawers::GenInput_UV0)) {
 		mesh_format |= RS::ARRAY_FORMAT_TEX_UV;
 	}
-	if (_should_gen_input(Drawers::GenInput_UV1)) {
-		if (render_mode == PKRender::RENDER_MODE_3D) {
-			mesh_format |= RS::ARRAY_FORMAT_TEX_UV2;
+	const bool needs_uv1 = _should_gen_input(Drawers::GenInput_UV1);
+	const bool needs_custom0_uv1 = needs_uv1 && render_mode == PKRender::RENDER_MODE_2D;
+	const bool needs_rawuv0 = _should_gen_input(Drawers::GenInput_RawUV0);
+	const bool needs_custom0 = needs_rawuv0 || needs_custom0_uv1;
+	if (needs_uv1 && render_mode == PKRender::RENDER_MODE_3D) {
+		// No UV2 in canvas_item shaders.
+		mesh_format |= RS::ARRAY_FORMAT_TEX_UV2;
+	}
+	if (needs_custom0) {
+		mesh_format |= RS::ARRAY_FORMAT_CUSTOM0;
+		// In 2D, CUSTOM0 holds UV1 in .xy and RawUV0 in .zw when both are needed, otherwise only the needed one in .xy
+		if (needs_custom0_uv1 && needs_rawuv0) {
+			mesh_format |= RS::ARRAY_CUSTOM_RGBA_FLOAT << RS::ARRAY_FORMAT_CUSTOM0_SHIFT;
 		} else {
-			mesh_format |= RS::ARRAY_FORMAT_CUSTOM0; // No UV2 in canvas_item shaders.
 			mesh_format |= RS::ARRAY_CUSTOM_RG_FLOAT << RS::ARRAY_FORMAT_CUSTOM0_SHIFT;
 		}
 	}
@@ -213,6 +222,9 @@ bool PKBatchDrawerBillboardCPU::AllocBuffers(SRenderContext &p_ctx) {
 		}
 		if (_should_gen_input(Drawers::GenInput_UV1)) {
 			texcoords2.Resize(vtx_count_alloc);
+		}
+		if (_should_gen_input(Drawers::GenInput_RawUV0)) {
+			rawtexcoords.Resize(vtx_count_alloc);
 		}
 		atb_array.resize(vtx_count_alloc * atb_stride);
 		vtx_array.resize(vtx_count_alloc * vnt_stride);
@@ -299,6 +311,9 @@ bool PKBatchDrawerBillboardCPU::MapBuffers(SRenderContext &p_ctx) {
 	}
 	if (_should_gen_input(Drawers::GenInput_UV1)) {
 		m_BBJobs_Billboard.m_Exec_Texcoords.m_Texcoords2 = texcoords2;
+	}
+	if (_should_gen_input(Drawers::GenInput_RawUV0)) {
+		m_BBJobs_Billboard.m_Exec_Texcoords.m_RawTexcoords = rawtexcoords;
 	}
 
 	// -----------------------------------------
@@ -420,31 +435,58 @@ bool PKBatchDrawerBillboardCPU::UnmapBuffers(SRenderContext &p_ctx) {
 	// Clear unused indices at the end of the index buffer
 	idx_array.clear_slack_data(idx_count * idx_stride);
 
+	const bool needs_uv1 = _should_gen_input(Drawers::GenInput_UV1);
+	const bool needs_rawuv0 = _should_gen_input(Drawers::GenInput_RawUV0);
+
+	// Per-vertex attribute layout (Godot attribute stream order is TEX_UV, TEX_UV2, CUSTOM0):
+	// - 3D: UV0 (TEX_UV), [UV1 (TEX_UV2)], [RawUV0 (CUSTOM0.xy)]
+	// - 2D: UV0 (TEX_UV), [UV1 (CUSTOM0.xy)], [RawUV0 (CUSTOM0.zw if UV1, else CUSTOM0.xy)]
 	if (atb_stride > 0) {
-		if (!_should_gen_input(Drawers::GenInput_UV1)) {
+		CFloat2 *dest = reinterpret_cast<CFloat2 *>(atb_array.ptrw());
+		constexpr int float4_size = sizeof(SIMD::Float4);
+		const CFloat2 *uv0_data = texcoords.RawDataPointer();
+		const CFloat2 *uv1_data = texcoords2.RawDataPointer();
+		const CFloat2 *rawuv0_data = rawtexcoords.RawDataPointer();
+		const int vertices_left = vtx_count % 2;
+		const int global_offset = (vtx_count - vertices_left);
+
+		if (!needs_uv1 && !needs_rawuv0) {
 			// Only UV0 was requested, can raw copy the data.
-			memcpy(atb_array.ptrw(), texcoords.RawDataPointer(), vtx_count * atb_stride);
-		} else {
-			CFloat2 *dest = reinterpret_cast<CFloat2 *>(atb_array.ptrw());
-			constexpr int float4_size = sizeof(SIMD::Float4);
-			const CFloat2 *uv0_data = texcoords.RawDataPointer();
-			const CFloat2 *uv1_data = texcoords2.RawDataPointer();
+			memcpy(dest, uv0_data, vtx_count * atb_stride);
+		} else if (!needs_uv1 || !needs_rawuv0) {
+			// Two streams: UV0, UV1 or UV0, RawUV0
+			const CFloat2 *second_data = needs_rawuv0 ? rawuv0_data : uv1_data;
 			for (int i = 0; i < vtx_count / 2; ++i) {
-				SIMD::Float4 uv0 = SIMD::Float4::LoadAligned16(uv0_data, i * float4_size);
-				SIMD::Float4 uv1 = SIMD::Float4::LoadAligned16(uv1_data, i * float4_size);
-				SIMD::Float4 lo = SIMD::MoveLoHi(uv0, uv1);
-				SIMD::Float4 hi = SIMD::MoveHiLo(uv1, uv0);
+				const SIMD::Float4 uv0 = SIMD::Float4::LoadAligned16(uv0_data, i * float4_size); // a0 a1
+				const SIMD::Float4 second = SIMD::Float4::LoadAligned16(second_data, i * float4_size); // b0 b1
+				const SIMD::Float4 lo = SIMD::MoveLoHi(uv0, second); // a0 b0
+				const SIMD::Float4 hi = SIMD::MoveHiLo(second, uv0); // a1 b1
 				lo.StoreUnaligned(dest, 2 * i * float4_size);
 				hi.StoreUnaligned(dest, 2 * i * float4_size + float4_size);
 			}
-			const int vertices_left = vtx_count % 2;
-			const int global_offset = (vtx_count - vertices_left);
 			for (int i = 0; i < vertices_left; ++i) {
 				const int offset = global_offset + i;
-				CFloat2 uv0 = uv0_data[offset];
-				CFloat2 uv1 = uv1_data[offset];
-				dest[offset * 2 + 0] = uv0;
-				dest[offset * 2 + 1] = uv1;
+				dest[offset * 2 + 0] = uv0_data[offset];
+				dest[offset * 2 + 1] = second_data[offset];
+			}
+		} else {
+			// Three streams: UV0, UV1, RawUV0
+			for (int i = 0; i < vtx_count / 2; ++i) {
+				const SIMD::Float4 uv0 = SIMD::Float4::LoadAligned16(uv0_data, i * float4_size); // a0 a1
+				const SIMD::Float4 uv1 = SIMD::Float4::LoadAligned16(uv1_data, i * float4_size); // b0 b1
+				const SIMD::Float4 rawuv0 = SIMD::Float4::LoadAligned16(rawuv0_data, i * float4_size); // c0 c1
+				const SIMD::Float4 out0 = SIMD::MoveLoHi(uv0, uv1); // a0 b0
+				const SIMD::Float4 out1 = SIMD::MoveLoHi(rawuv0, SIMD::MoveHiLo(uv0, uv0)); // c0 a1
+				const SIMD::Float4 out2 = SIMD::MoveHiLo(rawuv0, uv1); // b1 c1
+				out0.StoreUnaligned(dest, 3 * i * float4_size);
+				out1.StoreUnaligned(dest, 3 * i * float4_size + float4_size);
+				out2.StoreUnaligned(dest, 3 * i * float4_size + 2 * float4_size);
+			}
+			for (int i = 0; i < vertices_left; ++i) {
+				const int offset = global_offset + i;
+				dest[offset * 3 + 0] = uv0_data[offset];
+				dest[offset * 3 + 1] = uv1_data[offset];
+				dest[offset * 3 + 2] = rawuv0_data[offset];
 			}
 		}
 	}
@@ -508,7 +550,7 @@ bool PKBatchDrawerBillboardCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawC
 				_should_gen_input(Drawers::GenInput_Normal) || (has_views && _should_gen_input(Drawers::GenInput_Normal, 0)) ||
 				_should_gen_input(Drawers::GenInput_Tangent) || (has_views && _should_gen_input(Drawers::GenInput_Tangent, 0));
 
-		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1);
+		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1) || _should_gen_input(Drawers::GenInput_RawUV0);
 
 		if (update_indices) {
 			rs->mesh_surface_update_index_region(mesh_rid, 0, 0, idx_array);
@@ -568,6 +610,10 @@ String PKBatchDrawerBillboardCPU::_get_additional_stream_offset_name(AdditionalS
 			return "uv_rotations";
 		case STREAM_OFFSET_TRANSFORM_UVS_SCALES:
 			return "uv_scales";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1:
+			return "alpha_mask_1_animation_cursor";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2:
+			return "alpha_mask_2_animation_cursor";
 		default:
 			return "";
 	}
@@ -611,6 +657,10 @@ bool PKBatchDrawerBillboardCPU::_is_additional_input_supported(const CStringId &
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;
 		} else if (p_input_name == BasicRendererProperties::SID_TransformUVs_UVRotate()) {
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_ROTATES;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask1AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask2AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2;
 		}
 	}
 	return r_stream_offset_type != STREAM_OFFSET_MAX;

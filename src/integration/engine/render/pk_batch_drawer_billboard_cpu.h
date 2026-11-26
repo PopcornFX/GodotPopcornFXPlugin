@@ -48,6 +48,8 @@ private:
 		STREAM_OFFSET_TRANSFORM_UVS_OFFSETS,
 		STREAM_OFFSET_TRANSFORM_UVS_ROTATES,
 		STREAM_OFFSET_TRANSFORM_UVS_SCALES,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2,
 		STREAM_OFFSET_MAX
 	};
 
@@ -92,6 +94,7 @@ private:
 	PKPackedByteArray idx_array; // CPU index array
 	TArray<CFloat2, TArrayAligned16> texcoords; // CPU texcoords. Copied to atb_array in UnmapBuffers to give an aligned buffer to popcorn as the billboarding slow path is unmaintained.
 	TArray<CFloat2, TArrayAligned16> texcoords2; // CPU texcoords2. Copied to atb_array in UnmapBuffers to give an aligned buffer to popcorn as the billboarding slow path is unmaintained.
+	TArray<CFloat2, TArrayAligned16> rawtexcoords; // CPU rawtexcoords. Copied to atb_array in UnmapBuffers to give an aligned buffer to popcorn as the billboarding slow path is unmaintained.
 	PKPackedByteArray atb_array; // CPU attribute array (texture coords)
 	PKPackedByteArray vtx_array; // CPU vertex array (contains packed normals/tangents)
 	PKPackedByteArray nrm_tan_array; // CPU normal/tangent array (used for billboarding non-packed vectors)

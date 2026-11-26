@@ -20,6 +20,7 @@
 #endif
 
 #include "includes/popcornfx_common.gdshaderinc"
+#include "includes/features/popcornfx_feature_alpha_masks.gdshaderinc"
 #include "includes/features/popcornfx_feature_alpha_remap.gdshaderinc"
 #include "includes/features/popcornfx_feature_atlas_billboard.gdshaderinc"
 #include "includes/features/popcornfx_feature_diffuse.gdshaderinc"
@@ -44,6 +45,10 @@ uniform uint in_tubes_planes_offset = 0;
 	varying vec2 uv2;
 #endif
 
+#ifdef PK_HAS_ATLAS
+	varying vec2 raw_uv;
+#endif
+
 void vertex() {
 #ifdef PK_IS_2D
 	VERTEX = VERTEX * in_unit_pixel_size;
@@ -60,7 +65,15 @@ void vertex() {
 		particle_id = min(in_tubes_planes_offset + (uint(VERTEX_ID) - (in_tubes_planes_offset * 4u)) / in_vpp +
 						clamp(uint(VERTEX_ID) % in_vpp - vpp_half, 0, 1), in_total_particle_count - 1u);
 	}
-	
+
+#ifdef PK_HAS_ATLAS
+	#ifdef PK_IS_2D
+		raw_uv = CUSTOM0.zw;
+	#else
+		raw_uv = CUSTOM0.xy;
+	#endif
+#endif
+
 #ifdef PK_HAS_DIFFUSE
 	var_diffuse_color = pk_vert_diffuse(particle_id);
 #endif
@@ -69,6 +82,10 @@ void vertex() {
 #endif
 #ifdef PK_HAS_ALPHA_REMAP
 	var_alpha_cursor = pk_vert_alpha_remap(particle_id);
+#endif
+#ifdef PK_HAS_ALPHA_MASKS
+	var_alpha_mask_1_animation_cursor = pk_vert_alpha_masks_animation_cursor_1(particle_id);
+	var_alpha_mask_2_animation_cursor = pk_vert_alpha_masks_animation_cursor_2(particle_id);
 #endif
 #ifdef PK_HAS_ATLAS
 	var_texture_id = pk_vert_atlas(particle_id);
@@ -82,12 +99,23 @@ void vertex() {
 
 void fragment() {
 #if defined(PK_IS_3D)
-	FragSamplingParams params = build_frag_sampling_params(UV, UV2);
+	#ifdef PK_HAS_ATLAS
+		FragSamplingParams params = build_frag_sampling_params(UV, UV2, raw_uv);
+	#else
+		FragSamplingParams params = build_frag_sampling_params(UV, UV2, UV);
+	#endif
 #elif defined(PK_IS_2D)
-	FragSamplingParams params = build_frag_sampling_params(UV, uv2);
+	#ifdef PK_HAS_ATLAS
+		FragSamplingParams params = build_frag_sampling_params(UV, uv2, raw_uv);
+	#else
+		FragSamplingParams params = build_frag_sampling_params(UV, uv2, UV);
+	#endif
 #endif
 
 	// Compute each rendering feature
+#ifdef PK_HAS_ALPHA_MASKS
+	pk_frag_alpha_masks(params);
+#endif
 #ifdef PK_HAS_ATLAS
 	pk_frag_atlas(params);
 #endif
@@ -107,6 +135,14 @@ void fragment() {
 #ifdef PK_HAS_EMISSIVE
 	vec3 emission = vec3(0.0);
 	pk_frag_emissive(emission, params);
+	#ifdef PK_HAS_ALPHA_MASKS
+		pk_frag_apply_final_alpha_masks(albedo, emission, params);
+	#endif
+#elif defined(PK_HAS_ALPHA_MASKS)
+	pk_frag_apply_final_alpha_masks(albedo, params);
+#endif
+#if defined(PK_HAS_EMISSIVE) && defined(PK_HAS_EMISSIVE_RAMP)
+	pk_frag_apply_emissive_ramp(emission);
 #endif
 #ifdef PK_HAS_ANY_LIGHTING
 	vec3 normal_map = vec3(0.0);
@@ -117,7 +153,7 @@ void fragment() {
 	// Apply computed albedo and alpha values
 	PK_ALBEDO = albedo.rgb;
 #if defined(PK_BLEND_ADDITIVE) || defined(PK_BLEND_ALPHA) || defined(PK_BLEND_PREMUL_ALPHA)
-	#if defined(PK_HAS_EMISSIVE) && !defined(PK_HAS_DIFFUSE)
+	#if defined(PK_HAS_EMISSIVE) && !defined(PK_HAS_DIFFUSE) && !defined(PK_BLEND_PREMUL_ALPHA)
 		PK_ALPHA = 1.0;
 	#else
 		PK_ALPHA = albedo.a;

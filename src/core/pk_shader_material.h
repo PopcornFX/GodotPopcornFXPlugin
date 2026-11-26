@@ -92,8 +92,21 @@ public:
 	float mv_distortion_strength_columns = 1;
 	float mv_distortion_strength_rows = 1;
 
+	float alpha_mask_1_intensity = 1;
+	float alpha_mask_1_weight = 1;
+	Vector2 alpha_mask_1_scale;
+	float alpha_mask_1_rotation_speed = 0;
+	Vector2 alpha_mask_1_translation_speed;
+
+	float alpha_mask_2_intensity = 1;
+	float alpha_mask_2_weight = 1;
+	Vector2 alpha_mask_2_scale;
+	float alpha_mask_2_rotation_speed = 0;
+	Vector2 alpha_mask_2_translation_speed;
+
 	float softness_distance = 0;
-	bool transform_uvs_rgb_only = false;
+	bool transform_uv_rgb_only = false;
+	Vector2 transform_uv_rotation_center;
 	bool cast_shadows = false;
 
 	Ref<Texture2D> tex_diffuse;
@@ -104,6 +117,8 @@ public:
 	Ref<Texture2D> tex_rough_metal;
 	Ref<Texture2D> tex_specular;
 	Ref<Texture2D> tex_alpha_remap;
+	Ref<Texture2D> tex_alpha_mask_1_map;
+	Ref<Texture2D> tex_alpha_mask_2_map;
 	Ref<Texture2D> tex_motion_vectors;
 
 	Ref<Mesh> mesh;

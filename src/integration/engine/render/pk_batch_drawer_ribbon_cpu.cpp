@@ -175,6 +175,11 @@ bool PKBatchDrawerRibbonCPU::AllocBuffers(SRenderContext &p_ctx) {
 	if (_should_gen_input(Drawers::GenInput_Tangent, 0)) {
 		mesh_format |= RS::ARRAY_FORMAT_TANGENT;
 	}
+	if (_should_gen_input(Drawers::GenInput_RawUV0)) {
+		mesh_format |= RS::ARRAY_FORMAT_CUSTOM0;
+		mesh_format |= RS::ARRAY_CUSTOM_RG_FLOAT << RS::ARRAY_FORMAT_CUSTOM0_SHIFT;
+	}
+
 	// TODO: UV factors
 	/*if (should_gen_input(Drawers::GenInput_UVFactors, 0)) {
 		mesh_format |= RS::ARRAY_FORMAT_TEX_UV;
@@ -292,15 +297,28 @@ bool PKBatchDrawerRibbonCPU::MapBuffers(SRenderContext &p_ctx) {
 	//	TStridedMemoryView<CFloat4> uv_factors_view(static_cast<CFloat4 *>(uv_factors_mapped), vtx_count);
 	//	m_BBJobs_Ribbon.m_Exec_PNT.m_UVFactors4 = uv_factors_view;
 	//}
+	const bool need_uv1 = _should_gen_input(Drawers::GenInput_UV1);
+	const bool need_raw_uv0 = _should_gen_input(Drawers::GenInput_RawUV0);
+
 	if (_should_gen_input(Drawers::GenInput_UV0)) {
 		void *texcoords_mapped = atb_array.ptrw();
 		TStridedMemoryView<CFloat2> texcoords_view(static_cast<CFloat2 *>(texcoords_mapped), vtx_count, atb_stride);
 		m_BBJobs_Ribbon.m_Exec_Texcoords.m_Texcoords = texcoords_view;
 	}
-	if (_should_gen_input(Drawers::GenInput_UV1)) {
+	if (need_uv1) {
 		void *texcoords2_mapped = atb_array.ptrw() + sizeof(CFloat2);
 		TStridedMemoryView<CFloat2> texcoords2_view(static_cast<CFloat2 *>(texcoords2_mapped), vtx_count, atb_stride);
 		m_BBJobs_Ribbon.m_Exec_Texcoords.m_Texcoords2 = texcoords2_view;
+
+		if (need_raw_uv0) {
+			void *raw_texcoords_mapped = atb_array.ptrw() + sizeof(CFloat2) * 2;
+			TStridedMemoryView<CFloat2> raw_texcoords_view(static_cast<CFloat2 *>(raw_texcoords_mapped), vtx_count, atb_stride);
+			m_BBJobs_Ribbon.m_Exec_Texcoords.m_RawTexcoords = raw_texcoords_view;
+		}
+	} else if (need_raw_uv0) {
+		void *raw_texcoords_mapped = atb_array.ptrw() + sizeof(CFloat2);
+		TStridedMemoryView<CFloat2> raw_texcoords_view(static_cast<CFloat2 *>(raw_texcoords_mapped), vtx_count, atb_stride);
+		m_BBJobs_Ribbon.m_Exec_Texcoords.m_RawTexcoords = raw_texcoords_view;
 	}
 
 	// -----------------------------------------
@@ -486,7 +504,7 @@ bool PKBatchDrawerRibbonCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawCall
 				_should_gen_input(Drawers::GenInput_Normal) || (has_views && _should_gen_input(Drawers::GenInput_Normal, 0)) ||
 				_should_gen_input(Drawers::GenInput_Tangent) || (has_views && _should_gen_input(Drawers::GenInput_Tangent, 0));
 
-		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1);
+		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1) || _should_gen_input(Drawers::GenInput_RawUV0);
 
 		if (update_indices) {
 			rs->mesh_surface_update_index_region(mesh_rid, 0, 0, idx_array);
@@ -551,6 +569,10 @@ String PKBatchDrawerRibbonCPU::_get_additional_stream_offset_name(AdditionalStre
 			return "uv_rotations";
 		case STREAM_OFFSET_TRANSFORM_UVS_SCALES:
 			return "uv_scales";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1:
+			return "alpha_mask_1_animation_cursor";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2:
+			return "alpha_mask_2_animation_cursor";
 		default:
 			return "";
 	}
@@ -594,6 +616,10 @@ bool PKBatchDrawerRibbonCPU::_is_additional_input_supported(const CStringId &p_i
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;
 		} else if (p_input_name == BasicRendererProperties::SID_TransformUVs_UVRotate()) {
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_ROTATES;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask1AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask2AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2;
 		}
 		// TODO
 		//} else if (p_input_name == BasicRendererProperties::SID_ComputeVelocity_PreviousPosition()) {

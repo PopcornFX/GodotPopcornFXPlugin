@@ -7,6 +7,7 @@ varying flat vec2 var_uv_offset;
 varying flat float var_uv_rotation;
 varying flat vec2 var_uv_scale;
 uniform bool in_transform_uv_rgb_only;
+uniform vec2 in_transform_uv_rotation_center;
 
 // Vertex shader code
 vec2 pk_vert_transform_uvs_offset(uint p_particle_id) {
@@ -28,9 +29,10 @@ vec2 pk_vert_transform_uvs_scale(uint p_particle_id) {
 // Fragment shader code
 void pk_frag_transform_uvs(inout FragSamplingParams r_params)
 {
-    float sin_r = sin(var_uv_rotation);
-	float cos_r = cos(var_uv_rotation);
+    float sin_r = sin(-var_uv_rotation);
+	float cos_r = cos(-var_uv_rotation);
 	mat2 uv_rotation = mat2(vec2(cos_r, sin_r), vec2(-sin_r, cos_r));
+	vec2 uv_rotation_center = in_transform_uv_rotation_center;
 	vec2 uv_scale = var_uv_scale;
 	vec2 uv_offset = var_uv_offset;
 
@@ -42,7 +44,7 @@ void pk_frag_transform_uvs(inout FragSamplingParams r_params)
 	
 	r_params.old_uv = r_params.uv;
 	r_params.uv = ((r_params.uv - rect.zw) / rect.xy); // normalize (if atlas)
-	r_params.uv = uv_rotation * (r_params.uv * uv_scale) + uv_offset; // scale then rotate then translate UV
+	r_params.uv = uv_rotation * ((r_params.uv - uv_rotation_center) * uv_scale) + uv_offset + uv_scale * uv_rotation_center; // scale then rotate then translate UV
 	// For clean derivatives:
 	vec2 _uv = r_params.uv * rect.xy + rect.zw;
 	r_params.dUVdx = dFdx(_uv);
@@ -53,7 +55,7 @@ void pk_frag_transform_uvs(inout FragSamplingParams r_params)
 	vec4 rect2 = r_params.rect2;
 	r_params.old_uv2 = r_params.uv2;
 	r_params.uv2 = ((r_params.uv2 - rect2.zw) / rect2.xy); // normalize (if atlas)
-	r_params.uv2 = uv_rotation * (r_params.uv2 * uv_scale) + uv_offset; // scale then rotate then translate UV
+	r_params.uv2 = uv_rotation * ((r_params.uv2 - uv_rotation_center) * uv_scale) + uv_offset + uv_scale * uv_rotation_center; // scale then rotate then translate UV
 	r_params.uv2 = fract(r_params.uv2) * rect2.xy + rect2.zw; // undo normalize
 #endif
 

@@ -46,7 +46,7 @@ public:
 	virtual void UpdateThread_BuildBillboardingFlags(const PRendererDataBase &p_renderer) override;
 	virtual bool UpdateThread_LoadRendererAtlas(const PRendererDataBase &p_renderer, CResourceManager *p_resource_manager) override;
 
-	Ref<Texture2DRD> get_atlas_rects_srv() const;
+	RID get_atlas_rects_srv() const;
 	String get_effect_path() const { return effect_path; }
 
 	bool operator==(const PKRendererCache &p_other) const;
