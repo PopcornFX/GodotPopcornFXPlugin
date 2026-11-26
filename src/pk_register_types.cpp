@@ -24,7 +24,9 @@
 #include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_plugin.h"
 #include "pk_manager.h"
+#include "scene/pk_emitter_2d.h"
 #include "scene/pk_emitter_3d.h"
+#include "scene/pk_emitter_control.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/inspect/pk_editor_property_bool_array.h"
@@ -60,6 +62,8 @@ void initialize_popcornfx_module(ModuleInitializationLevel p_level) {
 		ClassDB::register_class<PKAttributeDesc>();
 		ClassDB::register_class<PKAttributeSamplerDesc>();
 		ClassDB::register_class<PKEmitter3D>();
+		ClassDB::register_class<PKEmitter2D>();
+		ClassDB::register_class<PKEmitterControl>();
 
 		ClassDB::register_class<ResourceFormatLoaderPKEffect>();
 		popcornfx_effect_loader.instantiate();

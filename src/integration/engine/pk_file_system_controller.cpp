@@ -208,18 +208,27 @@ CString PKFileSystemController::VirtualToPhysical(const CString &p_virtual_path,
 	return to_pk(sanitize_path(virtual_to_physical, false));
 }
 
-String PKFileSystemController::sanitize_path(const String &p_path, bool p_pk_virtual) {
+String PKFileSystemController::sanitize_physical_path(const String &p_path) {
 	if (p_path == "") {
 		return "";
 	}
 	if (p_path.begins_with("res:/") && !p_path.begins_with("res://")) { // "res://" path has been purified by PK, un-purify it
 		return "res://" + p_path.right(-5);
-	} else if (p_pk_virtual) {
-		return cached_source_pack_root_dir.path_join(p_path);
 	}
 	return p_path;
 }
 
-String PKFileSystemController::sanitize_path(const CString &p_path, bool p_pk_virtual) {
+String PKFileSystemController::sanitize_path(const String &p_path, bool p_pk_virtual) const {
+	if (p_path == "") {
+		return "";
+	}
+	const String path = sanitize_physical_path(p_path);
+	if (p_pk_virtual) {
+		return cached_source_pack_root_dir.path_join(path);
+	}
+	return path;
+}
+
+String PKFileSystemController::sanitize_path(const CString &p_path, bool p_pk_virtual) const {
 	return sanitize_path(to_gd(p_path), p_pk_virtual);
 }

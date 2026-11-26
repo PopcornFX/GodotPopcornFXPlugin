@@ -1,5 +1,13 @@
 uniform sampler2D in_tex_sim_data;
 
+#ifdef PK_IS_3D
+#define PK_ALBEDO ALBEDO
+#define PK_ALPHA ALPHA
+#elif defined(PK_IS_2D)
+#define PK_ALBEDO COLOR.rgb
+#define PK_ALPHA COLOR.a
+#endif
+
 uint texbuf_width(sampler2D p_texbuf) {
 	return uint(textureSize(p_texbuf, 0).x);
 }

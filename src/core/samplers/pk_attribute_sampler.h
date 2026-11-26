@@ -7,7 +7,9 @@
 #include "godot_cpp/classes/resource.hpp"
 
 #include "pk_register_types.h"
+#include "scene/pk_emitter_2d.h"
 #include "scene/pk_emitter_3d.h"
+#include "scene/pk_emitter_control.h"
 
 namespace PopcornFX {
 class CResourceDescriptor;
@@ -25,7 +27,7 @@ public:
 	}
 
 	virtual const PParticleSamplerDescriptor &get_sampler() { return desc; }
-	virtual void set_emitter(PKEmitter3D *p_emitter) { parent = p_emitter; }
+	virtual void set_emitter(Node *p_emitter) { parent = p_emitter; }
 
 protected:
 	static void _bind_methods() {}
@@ -35,7 +37,11 @@ protected:
 	virtual PackedStringArray _get_configuration_warnings() const { return {}; }
 
 	PParticleSamplerDescriptor desc;
-	PKEmitter3D *parent = nullptr;
+
+	Node *parent = nullptr;
+	PKEmitter3D *get_parent_3d() const { return cast_to<PKEmitter3D>(parent); }
+	PKEmitter2D *get_parent_2d() const { return cast_to<PKEmitter2D>(parent); }
+	PKEmitterControl *get_parent_control() const { return cast_to<PKEmitterControl>(parent); }
 };
 
 } // namespace godot

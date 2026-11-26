@@ -2,9 +2,9 @@
 # Consumed by misc/pk_utils.py: download_pk_ifn.
 
 PK_PACKAGES = {
-    'windows': {"id": '3Lvcps9MRk8uqtPM', "hash": '95fbd287124cc7aa2f5d3b450ab2ea947b8d3d80f20a5cba6af9b649ba7ce9ce'},
-    'linux': {"id": 'zvIdj1tjQEF9hYCY', "hash": 'ce999faa201dd4c96a311c5a76e31768ea5ff6ba2eb5314a40d9181ff9a05630'},
-    'macos': {"id": 'lhpLH6tjUCNzIPJi', "hash": '821ff86b888a792d4df72f38df7979e8a719f19fc997339411f06ab11547373c'},
-    'android': {"id": 'oY65qiKCrSsoy5jg', "hash": '4526690515f0b179eb2241ebd36b495a26921127e318a22780d422eaf2f14892'},
-    'ios': {"id": 'wRkKxIlzRKTYODCt', "hash": '2ab05d4334df5d02d10b7eb2bc24e921a878d55ad8eb0e3f64f998fc528c2812'},
+    'windows': {"id": 'WgLEbCJNARdYVVM7', "hash": '64d7709a6874953df50d20902f686ac1a3d05bcfea5c4304496df787943abfe0'},
+    'linux': {"id": 'QCbvyxiWgm0CL6RV', "hash": '38128952ae6259529c04c117a7790858a6317763da8b7bc7bbeec48dc270f69b'},
+    'macos': {"id": 'Cn5uPFzgfqs9DzbS', "hash": '87967aae9fa8708f28fe5a2841beafd8cbbeab3b185ba002669db568fede0f36'},
+    'android': {"id": 'J8xp0AMNIiq0BdsP', "hash": '1a7d4dfa19089c6d5560f75b720f8e2b8224bda9a1141879636569f5837efa4d'},
+    'ios': {"id": 'YNtcy0yBXBuyUSjm', "hash": '7090661f2c7dc0df306f7f13573869d95fb94b5d426442100c8db6d4359f5b29'},
 }

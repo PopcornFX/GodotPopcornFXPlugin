@@ -20,11 +20,12 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	// Here we define which geometry we need to render this material.
 	// m_Flags is used to tell PopcornFX what it needs to generate
 
-	PKGD_ASSERT(p_renderer != null);
+	PKGD_ASSERT(p_renderer != nullptr);
 
-	PKScene *scene = PKPlugin::get_singleton()->get_scene();
-	const PKShaderMaterial &shader_mat = scene->get_or_create_shader_material(p_renderer.Get());
+	PKShaderMaterial shader_mat;
+	shader_mat.init_from_renderer(*p_renderer, PKRender::RENDER_MODE_3D);
 
+	m_Flags.m_HasRawUV0 = false;
 	m_Flags.m_HasUV = true;
 	m_Flags.m_FlipU = false;
 	m_Flags.m_FlipV = false;
@@ -37,6 +38,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	m_Flags.m_Slicable = false; // TODO
 
 	if (p_renderer->m_RendererType == PopcornFX::Renderer_Billboard) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_FlipUVs())) { // Legacy
 			m_Flags.m_FlipU = false;
 			m_Flags.m_FlipV = true;
@@ -56,6 +61,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	}
 
 	else if (p_renderer->m_RendererType == PopcornFX::Renderer_Ribbon) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.GetPropertyValue_B(PopcornFX::BasicRendererProperties::SID_TextureUVs_FlipU(), false) ||
 				p_renderer->m_Declaration.GetPropertyValue_B(PopcornFX::BasicRendererProperties::SID_BasicTransformUVs_FlipU(), false)) {
 			m_Flags.m_FlipU = true;
@@ -75,6 +84,10 @@ void PKRendererCache::UpdateThread_BuildBillboardingFlags(const PRendererDataBas
 	}
 
 	else if (p_renderer->m_RendererType == PopcornFX::Renderer_Triangle) {
+		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_AlphaMasks())) {
+			m_Flags.m_HasRawUV0 = true;
+		}
+
 		if (p_renderer->m_Declaration.IsFeatureEnabled(PopcornFX::BasicRendererProperties::SID_BasicTransformUVs_FlipU())) {
 			m_Flags.m_FlipU = true;
 		}
@@ -117,7 +130,7 @@ bool PKRendererCache::UpdateThread_LoadRendererAtlas(const PRendererDataBase &p_
 	return true;
 }
 
-Ref<Texture2DRD> PKRendererCache::get_atlas_rects_srv() const {
+RID PKRendererCache::get_atlas_rects_srv() const {
 	return atlas_rects.get_srv();
 }
 
@@ -130,9 +143,13 @@ bool PKRendererCacheAudio::operator==(const PKRendererCacheAudio &p_other) const
 }
 
 PKRendererCacheAudio::~PKRendererCacheAudio() {
-	PKScene *scene = PKPlugin::get_singleton()->get_scene();
-	if (scene != nullptr) { // when shutting down, the scene is destroyed before the renderer caches
-		scene->clear_sound_instance(&material_desc_sound.pool);
+	PKScene *scene_3d = PKPlugin::get_singleton()->get_scene_3d();
+	if (scene_3d != nullptr) { // when shutting down, the scene is destroyed before the renderer caches
+		scene_3d->clear_sound_instance_3d(&material_desc_sound.pool_3d);
+	}
+	PKScene *scene_2d = PKPlugin::get_singleton()->get_scene_2d();
+	if (scene_2d != nullptr) { // when shutting down, the scene is destroyed before the renderer caches
+		scene_2d->clear_sound_instance_2d(&material_desc_sound.pool_2d);
 	}
 }
 
@@ -153,9 +170,11 @@ bool PKParticleMaterialDescSound::init_from_renderer(const CRendererDataSound &p
 		sound_path = String(renderer_sound_data_path->ValuePath().Data());
 	}
 	const uint32_t max_audio_source_count = settings->get_setting("popcornfx/runtime/max_audio_sources_count_per_clip");
-	pool.resize(max_audio_source_count);
+	pool_3d.resize(max_audio_source_count);
+	pool_2d.resize(max_audio_source_count);
 
-	pool.set_sources_parent(manager->find_suitable_parent_for_audio_pool_sources()); // TODO modify when 2D
+	pool_3d.set_sources_parent(manager->find_suitable_parent_for_audio_pool_sources());
+	pool_2d.set_sources_parent(manager->find_suitable_parent_for_audio_pool_sources());
 
 	return true;
 }

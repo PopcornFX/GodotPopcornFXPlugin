@@ -5,6 +5,7 @@
 #pragma once
 
 #include "godot_cpp/classes/audio_stream.hpp"
+#include "godot_cpp/classes/world2d.hpp"
 #include "godot_cpp/classes/world3d.hpp"
 #include "godot_cpp/templates/hash_map.hpp"
 #include "godot_cpp/variant/rid.hpp"
@@ -24,35 +25,44 @@ using namespace godot;
 
 class PKScene : public IParticleScene {
 public:
-	PKScene();
+	PKScene(PKRender::RenderMode p_render_mode);
 	~PKScene();
 
 	CParticleMediumCollection *get_particle_medium_collection() { return particle_medium_collection; }
 	TArray<SSceneView> &get_views() { return scene_views; }
 
-	const PKShaderMaterial &get_or_create_shader_material(const CRendererDataBase *p_renderer);
+	PKShaderMaterial &get_or_create_shader_material(const CRendererDataBase *p_renderer);
 	void clear_shader_material(const CRendererDataBase *p_renderer);
 
 	Pair<RID, bool> &get_or_create_visual_instance(RID p_mesh_rid);
-	void set_sound_instance_rendered(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
-
 	void clear_visual_instance(RID p_mesh_rid);
-	void clear_sound_instance(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
+
+	Pair<RID, bool> &get_or_create_canvas_item(RID p_mesh_rid);
+	void clear_canvas_item(RID p_mesh_rid);
+
+	void set_sound_instance_rendered_3d(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
+	void clear_sound_instance_3d(PKAudioPlayerPool<AudioStreamPlayer3D> *p_audio_pool_ptr);
+	void set_sound_instance_rendered_2d(PKAudioPlayerPool<AudioStreamPlayer2D> *p_audio_pool_ptr);
+	void clear_sound_instance_2d(PKAudioPlayerPool<AudioStreamPlayer2D> *p_audio_pool_ptr);
 
 	void update(float p_delta_time, CFloat4x4 &p_mat_wv, CFloat4x4 &p_mat_wvp);
 
-	PhysicsDirectSpaceState3D *state;
+	PhysicsDirectSpaceState3D *state_3d = nullptr;
+	PhysicsDirectSpaceState2D *state_2d = nullptr;
 	virtual void RayTracePacket(const Colliders::STraceFilter &p_trace_filter, const Colliders::SRayPacket &p_packet, const Colliders::STracePacket &p_results) override;
 	virtual TMemoryView<const float *const> GetAudioWaveform(CStringId p_channel_group, PopcornFX::u32 &r_base_count) const override;
 	virtual TMemoryView<const float *const> GetAudioSpectrum(CStringId p_channel_group, PopcornFX::u32 &r_base_count) const override;
 
 private:
 	void _post_update_instances();
+	void _post_update_canvas_items();
 
+	PKRender::RenderMode render_mode;
 	CParticleMediumCollection *particle_medium_collection = nullptr;
 	TArray<SSceneView> scene_views;
 	HashMap<const CRendererDataBase *, PKShaderMaterial> shader_materials;
 	HashMap<RID, Pair<RID, bool>> visual_instances; // Key: mesh RID, Value: visual_instance RID & rendered_this_frame bool
-	HashMap<PKAudioPlayerPool<AudioStreamPlayer3D> *, bool> sound_instances; // Key: audio_pool ptr, Value: rendered_this_frame bool
-	// TODO modify when 2D
+	HashMap<RID, Pair<RID, bool>> canvas_items; // Key: mesh RID, Value: canvas_item RID & rendered_this_frame bool
+	HashMap<PKAudioPlayerPool<AudioStreamPlayer3D> *, bool> sound_instances_3d; // Key: audio_pool ptr, Value: rendered_this_frame bool
+	HashMap<PKAudioPlayerPool<AudioStreamPlayer2D> *, bool> sound_instances_2d; // Key: audio_pool ptr, Value: rendered_this_frame bool
 };

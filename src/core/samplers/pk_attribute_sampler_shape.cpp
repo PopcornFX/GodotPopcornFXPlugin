@@ -6,16 +6,20 @@
 
 #include "godot_cpp/classes/box_shape3d.hpp"
 #include "godot_cpp/classes/capsule_shape3d.hpp"
+#include "godot_cpp/classes/circle_shape2d.hpp"
 #include "godot_cpp/classes/concave_polygon_shape3d.hpp"
 #include "godot_cpp/classes/convex_polygon_shape3d.hpp"
 #include "godot_cpp/classes/cylinder_shape3d.hpp"
+#include "godot_cpp/classes/mesh_instance2d.hpp"
 #include "godot_cpp/classes/mesh_instance3d.hpp"
 #include "godot_cpp/classes/physics_server3d.hpp"
+#include "godot_cpp/classes/rectangle_shape2d.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/sphere_shape3d.hpp"
 
 #include "integration/internal/pk_resource_handler_mesh.h"
 #include "integration/pk_error_handling.h"
+#include "integration/pk_plugin.h"
 #include "integration/pk_plugin_types.h"
 
 #include <pk_geometrics/include/ge_mesh_kdtree.h>
@@ -29,7 +33,7 @@ PKAttributeSamplerShape::~PKAttributeSamplerShape() {
 	_clear_mesh_runtime_structs();
 }
 
-void PKAttributeSamplerShape::set_emitter(PKEmitter3D *p_emitter) {
+void PKAttributeSamplerShape::set_emitter(Node *p_emitter) {
 	parent = p_emitter;
 	_update_node(); // We most likely loaded without an emitter set, update node
 	update_transforms();
@@ -41,20 +45,36 @@ void PKAttributeSamplerShape::update_transforms() {
 		return;
 	}
 	if (parent == nullptr || transform_mode == TRANSFORM_NONE) {
-		shape_desc->m_WorldTr_Current = nullptr;
-		shape_desc->m_WorldTr_Previous = nullptr;
-	} else if (transform_mode == TRANSFORM_PARENT) {
-		ERR_FAIL_NULL(parent);
-		SSpawnTransformsPack pack = parent->get_transform_pack();
-		shape_desc->m_WorldTr_Current = pack.m_WorldTr_Current;
-		shape_desc->m_WorldTr_Previous = pack.m_WorldTr_Previous;
-	} else if (transform_mode == TRANSFORM_NODE) {
-		if (node != nullptr) {
-			shape_desc->m_WorldTr_Current = &node_global_transform;
-			shape_desc->m_WorldTr_Previous = &node_global_transform_previous;
-		} else {
+		if (local_transform == CFloat4x4::IDENTITY) {
 			shape_desc->m_WorldTr_Current = nullptr;
 			shape_desc->m_WorldTr_Previous = nullptr;
+		} else {
+			shape_desc->m_WorldTr_Current = &local_transform;
+			shape_desc->m_WorldTr_Previous = &local_transform;
+		}
+	} else if (transform_mode == TRANSFORM_PARENT) {
+		ERR_FAIL_NULL(parent);
+		parent_transforms_pack = _get_parent_transforms_pack();
+		if (local_transform == CFloat4x4::IDENTITY) {
+			shape_desc->m_WorldTr_Current = parent_transforms_pack.m_WorldTr_Current;
+			shape_desc->m_WorldTr_Previous = parent_transforms_pack.m_WorldTr_Previous;
+		} else {
+			shape_desc->m_WorldTr_Current = &global_transform;
+			shape_desc->m_WorldTr_Previous = &global_transform_previous;
+		}
+
+	} else if (transform_mode == TRANSFORM_NODE) {
+		if (node != nullptr) {
+			shape_desc->m_WorldTr_Current = &global_transform;
+			shape_desc->m_WorldTr_Previous = &global_transform_previous;
+		} else {
+			if (local_transform == CFloat4x4::IDENTITY) {
+				shape_desc->m_WorldTr_Current = nullptr;
+				shape_desc->m_WorldTr_Previous = nullptr;
+			} else {
+				shape_desc->m_WorldTr_Current = &local_transform;
+				shape_desc->m_WorldTr_Previous = &local_transform;
+			}
 		}
 	} else {
 		ERR_FAIL_MSG(vformat("Selected transform mode '%d' for PKAttributeSamplerShape is unimplemented", transform_mode));
@@ -62,7 +82,7 @@ void PKAttributeSamplerShape::update_transforms() {
 }
 
 void PKAttributeSamplerShape::set_shape(Ref<Resource> p_shape) {
-	if (p_shape.is_valid() && !p_shape->is_class(Shape3D::get_class_static()) && !p_shape->is_class(Mesh::get_class_static())) {
+	if (p_shape.is_valid() && !p_shape->is_class(Shape3D::get_class_static()) && !p_shape->is_class(Mesh::get_class_static()) && !p_shape->is_class(Shape2D::get_class_static())) {
 		ERR_FAIL_MSG(vformat("Cannot use %s as a shape to sample.", p_shape->get_class()));
 	}
 	if (shape.is_valid() && shape->is_connected("changed", callable_mp(this, &PKAttributeSamplerShape::_changed))) {
@@ -105,7 +125,7 @@ void PKAttributeSamplerShape::set_sample_mode(SampleMode p_sample_mode) {
 
 void PKAttributeSamplerShape::_bind_methods() {
 	// Sync with _get_property_list
-	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, OBJECT, shape, PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,Mesh,MeshInstance3D", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
+	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, OBJECT, shape, PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,CircleShape2D,RectangleShape2D,Mesh", PROPERTY_USAGE_STORAGE | PROPERTY_USAGE_ALWAYS_DUPLICATE);
 	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, sample_mode, PROPERTY_HINT_ENUM, "Shape,Node", PROPERTY_USAGE_DEFAULT);
 	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, INT, transform_mode, PROPERTY_HINT_ENUM, "None,Parent,Node", PROPERTY_USAGE_DEFAULT);
 	BIND_BASIC_PROPERTY(PKAttributeSamplerShape, NODE_PATH, node_path, PROPERTY_HINT_NODE_PATH_VALID_TYPES, "MeshInstance3D", PROPERTY_USAGE_STORAGE);
@@ -125,7 +145,7 @@ void PKAttributeSamplerShape::_get_property_list(List<PropertyInfo> *p_list) con
 			p_list->push_back(PropertyInfo(
 					Variant::OBJECT,
 					"shape",
-					PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,Mesh,MeshInstance3D",
+					PROPERTY_HINT_RESOURCE_TYPE, "BoxShape3D,CapsuleShape3D,CylinderShape3D,SphereShape3D,ConvexPolygonShape3D,ConcavePolygonShape3D,CircleShape2D,RectangleShape2D,Mesh",
 					PROPERTY_USAGE_EDITOR));
 			break;
 		case SAMPLE_NODE:
@@ -150,15 +170,25 @@ void PKAttributeSamplerShape::_changed() {
 		}
 		return;
 	}
+	local_transform = CFloat4x4::IDENTITY;
 	if (shape->is_class(BoxShape3D::get_class_static())) {
 		const Ref<BoxShape3D> box = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Box(to_pk(box->get_size())));
+	} else if (shape->is_class(RectangleShape2D::get_class_static())) {
+		const Ref<RectangleShape2D> rectangle = shape;
+		const Vector2 rectangle_size = rectangle->get_size() / PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+		shape_desc = PK_NEW(CShapeDescriptor_Box(CFloat3(to_pk(rectangle_size), 0)));
 	} else if (shape->is_class(CapsuleShape3D::get_class_static())) {
 		const Ref<CapsuleShape3D> capsule = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Capsule(capsule->get_radius(), capsule->get_height()));
 	} else if (shape->is_class(CylinderShape3D::get_class_static())) {
 		const Ref<CylinderShape3D> cylinder = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Cylinder(cylinder->get_radius(), cylinder->get_height()));
+	} else if (shape->is_class(CircleShape2D::get_class_static())) {
+		const Ref<CircleShape2D> circle = shape;
+		const float radius = circle->get_radius() / PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+		local_transform = to_pk(Transform3D(Basis(Vector3(1, 0, 0), Math::deg_to_rad(90.f)), Vector3()));
+		shape_desc = PK_NEW(CShapeDescriptor_Cylinder(radius, 0));
 	} else if (shape->is_class(SphereShape3D::get_class_static())) {
 		const Ref<SphereShape3D> sphere = shape;
 		shape_desc = PK_NEW(CShapeDescriptor_Sphere(sphere->get_radius()));
@@ -243,9 +273,16 @@ void PKAttributeSamplerShape::_disconnect_changed() {
 }
 
 void PKAttributeSamplerShape::_physics_process() {
-	if (node != nullptr && node->is_inside_tree()) {
-		node_global_transform_previous = node_global_transform;
-		node_global_transform = to_pk(node->get_global_transform());
+	if (transform_mode == TRANSFORM_PARENT && local_transform != CFloat4x4::IDENTITY) {
+		global_transform_previous = global_transform;
+		if (parent_transforms_pack.m_WorldTr_Current != nullptr) {
+			global_transform = local_transform * *parent_transforms_pack.m_WorldTr_Current;
+		} else {
+			global_transform = local_transform;
+		}
+	} else if (transform_mode == TRANSFORM_NODE && node != nullptr && node->is_inside_tree()) {
+		global_transform_previous = global_transform;
+		global_transform = local_transform * to_pk(node->get_global_transform());
 	}
 }
 
@@ -314,6 +351,21 @@ void PKAttributeSamplerShape::_clear_mesh_runtime_structs() {
 	PK_SAFE_DELETE(mesh_projection);
 }
 
+SSpawnTransformsPack PKAttributeSamplerShape::_get_parent_transforms_pack() const {
+	const PKEmitter3D *emitter_3d = get_parent_3d();
+	if (emitter_3d != nullptr) {
+		return emitter_3d->get_transform_pack();
+	}
+	const PKEmitter2D *emitter_2d = get_parent_2d();
+	if (emitter_2d != nullptr) {
+		return emitter_2d->get_transform_pack();
+	}
+	const PKEmitterControl *emitter_control = get_parent_control();
+	if (emitter_control != nullptr) {
+		return emitter_control->get_transform_pack();
+	}
+	ERR_FAIL_V_MSG({}, "No valid PKEmitter cast");
+}
 } // namespace godot
 
 VARIANT_ENUM_CAST(PKAttributeSamplerShape::TransformMode);

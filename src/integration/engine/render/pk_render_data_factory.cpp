@@ -4,7 +4,11 @@
 //----------------------------------------------------------------------------
 #include "pk_render_data_factory.h"
 
+#include "godot_cpp/classes/resource_loader.hpp"
+
+#include "integration/engine/pk_file_system_controller.h"
 #include "integration/pk_error_handling.h"
+#include "integration/pk_plugin_types.h"
 #include "pk_batch_drawer_billboard_cpu.h"
 #include "pk_batch_drawer_mesh_cpu.h"
 #include "pk_batch_drawer_ribbon_cpu.h"
@@ -16,18 +20,13 @@ CRendererBatchDrawer *PKRenderDataFactory::create_batch_drawer(ERendererClass p_
 	if (!p_gpu_storage) {
 		switch (p_renderer_type) {
 			case Renderer_Billboard:
-				return PK_NEW(PKBatchDrawerBillboardCPU);
+				return PK_NEW(PKBatchDrawerBillboardCPU(render_mode));
 			case Renderer_Ribbon:
-				return PK_NEW(PKBatchDrawerRibbonCPU);
+				return PK_NEW(PKBatchDrawerRibbonCPU(render_mode));
 			case Renderer_Mesh:
-				return PK_NEW(PKBatchDrawerMeshCPU);
+				return PK_NEW(PKBatchDrawerMeshCPU(render_mode));
 			case Renderer_Sound:
-				return PK_NEW(PKBatchDrawerSoundCPU);
-			//case	Renderer_Light:
-			//{
-			//	GodotLightBatchDrawer *batch = PK_NEW(GodotLightBatchDrawer);
-			//	return batch;
-			//}
+				return PK_NEW(PKBatchDrawerSoundCPU(render_mode));
 			default:
 				return nullptr;
 		}
@@ -53,7 +52,9 @@ PRendererCacheBase PKRenderDataFactory::create_renderer_cache(const PRendererDat
 			break;
 		}
 		default: {
-			renderer_cache = PK_NEW(PKRendererCache);
+			const String effect_path = to_gd(p_particle_desc->ParentEffect()->FilePath());
+			const String sanitized = PKFileSystemController::sanitize_physical_path(effect_path);
+			renderer_cache = PK_NEW(PKRendererCache(sanitized));
 			break;
 		}
 	}

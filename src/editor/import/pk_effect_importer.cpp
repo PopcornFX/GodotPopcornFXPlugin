@@ -5,12 +5,15 @@
 #if TOOLS_ENABLED
 #include "pk_effect_importer.h"
 
+#include "godot_cpp/classes/config_file.hpp"
 #include "godot_cpp/classes/dir_access.hpp"
+#include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/classes/resource_loader.hpp"
 
 #include "core/pk_effect.h"
 #include "integration/internal/editor/pk_baker.h"
 #include "integration/pk_plugin.h"
+#include "pk_manager.h"
 
 using namespace godot;
 
@@ -38,6 +41,10 @@ PackedStringArray PKEffectImporter::_get_recognized_extensions() const {
 
 TypedArray<Dictionary> PKEffectImporter::_get_import_options(const String &p_path, int32_t p_preset_index) const {
 	TypedArray<Dictionary> output;
+	Dictionary z_index;
+	z_index["name"] = "z_index";
+	z_index["default_value"] = 0;
+	output.append(z_index);
 	return output;
 }
 
@@ -76,10 +83,16 @@ Error PKEffectImporter::_import(const String &p_source_file, const String &p_sav
 		const Ref<DirAccess> dir = DirAccess::open("res://");
 		const String new_path = effect_save_path.erase(idx, effect_save_path.length() - idx) + ".pkfx";
 		dir->rename(new_path, effect_save_path);
+		const String config_file_path = effect_save_path + String(".cfg");
+		Ref<ConfigFile> config;
+		config.instantiate();
+		config->set_value("import_options", "z_index", p_options["z_index"]);
+		config->save(config_file_path);
+		const_cast<TypedArray<String> &>(r_gen_files).append(config_file_path);
 
 		ResourceLoader *loader = ResourceLoader::get_singleton();
 
-		if (loader->exists(p_source_file)) {
+		if (loader->has_cached(p_source_file)) {
 			const Ref<PKEffect> resource = loader->load(p_source_file);
 			if (resource.is_valid()) {
 				resource->effect = nullptr; // Before unloading, properly null the effect.

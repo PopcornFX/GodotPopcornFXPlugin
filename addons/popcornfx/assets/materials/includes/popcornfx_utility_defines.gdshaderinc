@@ -11,6 +11,11 @@ struct FragSamplingParams {
 		vec2 uv2;
 		float blend_mix;
 	#endif
+	#ifdef PK_HAS_ALPHA_MASKS
+		vec2 raw_uv;
+		float alpha_mask_sample1;
+		float alpha_mask_sample2;
+	#endif
 	#ifdef PK_HAS_TRANSFORM_UVS
 		bool transform_uv_rgb_only;
 		vec2 dUVdx;
@@ -26,13 +31,18 @@ struct FragSamplingParams {
 	#endif
 };
 
-FragSamplingParams build_frag_sampling_params(vec2 p_uv, vec2 p_uv2) {
+FragSamplingParams build_frag_sampling_params(vec2 p_uv, vec2 p_uv2, vec2 p_raw_uv) {
 	FragSamplingParams params;
 
 	params.uv = p_uv;
 	#ifdef PK_HAS_ATLAS_BLEND
 		params.uv2 = p_uv2;
 		params.blend_mix = 0.0;
+	#endif
+	#ifdef PK_HAS_ALPHA_MASKS
+		params.raw_uv = p_raw_uv;
+		params.alpha_mask_sample1 = 0.0;
+		params.alpha_mask_sample2 = 0.0;
 	#endif
 	#ifdef PK_HAS_TRANSFORM_UVS
 		params.transform_uv_rgb_only = false;

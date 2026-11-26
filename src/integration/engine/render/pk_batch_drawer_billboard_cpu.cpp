@@ -4,6 +4,9 @@
 //----------------------------------------------------------------------------
 #include "pk_batch_drawer_billboard_cpu.h"
 
+#include "integration/pk_sdk.h"
+
+#include "godot_cpp/classes/project_settings.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/resource_loader.hpp"
 #include "godot_cpp/classes/shader_material.hpp"
@@ -13,7 +16,9 @@
 #include "integration/engine/render/pk_renderer_cache.h"
 #include "integration/internal/pk_scene.h"
 #include "integration/pk_plugin.h"
+#include "pk_manager.h"
 
+#include <pk_maths/include/pk_maths_simd_vector.h>
 #include <pk_render_helpers/include/render_features/rh_features_basic.h>
 
 using RS = RenderingServer;
@@ -23,24 +28,40 @@ bool PKBatchDrawerBillboardCPU::Setup(const CRendererDataBase *p_renderer, const
 		return false;
 	}
 
-	owner_scene = PKPlugin::get_singleton()->get_scene();
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		owner_scene = PKPlugin::get_singleton()->get_scene_3d();
+	} else {
+		owner_scene = PKPlugin::get_singleton()->get_scene_2d();
+	}
+
 	if (!PKGD_VERIFY(owner_scene != nullptr)) {
 		return false;
 	}
 
-	// Init mesh and visual instance, then link them together
+	// Init mesh, then create and link with visual instance or canvas item
 	mesh.instantiate();
-	const RID instance = owner_scene->get_or_create_visual_instance(mesh->get_rid()).first;
-	RS::get_singleton()->instance_set_base(instance, mesh->get_rid());
-
-	// Get the material and apply its settings to the visual instance
+	const RID mesh_rid = mesh->get_rid();
 	shader_mat = &owner_scene->get_or_create_shader_material(p_renderer);
-	shader_mat->apply_to_visual_instance(instance);
+
+	RS *rs = RS::get_singleton();
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		const RID instance = owner_scene->get_or_create_visual_instance(mesh_rid).first;
+		rs->instance_set_base(instance, mesh_rid);
+		shader_mat->apply_to_visual_instance(instance);
+	}
+
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		const RID canvas_item = owner_scene->get_or_create_canvas_item(mesh_rid).first;
+		rs->canvas_item_add_mesh(canvas_item, mesh_rid);
+		rs->canvas_item_set_material(canvas_item, shader_mat->material->get_rid());
+	}
 
 	// Init constant fields of the mesh surface dict
 	surface["primitive"] = ArrayMesh::PRIMITIVE_TRIANGLES;
-	surface["material"] = shader_mat->material->get_rid();
 	surface["uv_scale"] = Vector4(0.0, 0.0, 0.0, 0.0);
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		surface["material"] = shader_mat->material->get_rid();
+	}
 
 #ifdef PK_DEBUG_AABB
 	aabb_debug.init(owner_scene);
@@ -52,7 +73,11 @@ bool PKBatchDrawerBillboardCPU::Setup(const CRendererDataBase *p_renderer, const
 
 void PKBatchDrawerBillboardCPU::Destroy() {
 	if (owner_scene != nullptr) {
-		owner_scene->clear_visual_instance(mesh->get_rid());
+		if (render_mode == PKRender::RENDER_MODE_3D) {
+			owner_scene->clear_visual_instance(mesh->get_rid());
+		} else {
+			owner_scene->clear_canvas_item(mesh->get_rid());
+		}
 #ifdef PK_DEBUG_AABB
 		aabb_debug.destroy(owner_scene);
 #endif
@@ -64,6 +89,16 @@ void PKBatchDrawerBillboardCPU::Destroy() {
 bool PKBatchDrawerBillboardCPU::AreRenderersCompatible(const CRendererDataBase *p_renderer_a, const CRendererDataBase *p_renderer_b) const {
 	if (!Super::AreRenderersCompatible(p_renderer_a, p_renderer_b)) {
 		return false;
+	}
+
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		const PKRendererCache *renderer_cache_a = static_cast<PKRendererCache *>(p_renderer_a->m_RendererCache.Get());
+		const int z_index_a = PKManager::get_singleton()->get_effect_z_index(renderer_cache_a->get_effect_path());
+		const PKRendererCache *renderer_cache_b = static_cast<PKRendererCache *>(p_renderer_b->m_RendererCache.Get());
+		const int z_index_b = PKManager::get_singleton()->get_effect_z_index(renderer_cache_b->get_effect_path());
+		if (z_index_a != z_index_b) {
+			return false;
+		}
 	}
 
 	const PKShaderMaterial &shader_a = owner_scene->get_or_create_shader_material(p_renderer_a);
@@ -113,8 +148,22 @@ bool PKBatchDrawerBillboardCPU::AllocBuffers(SRenderContext &p_ctx) {
 	if (_should_gen_input(Drawers::GenInput_UV0)) {
 		mesh_format |= RS::ARRAY_FORMAT_TEX_UV;
 	}
-	if (_should_gen_input(Drawers::GenInput_UV1)) {
+	const bool needs_uv1 = _should_gen_input(Drawers::GenInput_UV1);
+	const bool needs_custom0_uv1 = needs_uv1 && render_mode == PKRender::RENDER_MODE_2D;
+	const bool needs_rawuv0 = _should_gen_input(Drawers::GenInput_RawUV0);
+	const bool needs_custom0 = needs_rawuv0 || needs_custom0_uv1;
+	if (needs_uv1 && render_mode == PKRender::RENDER_MODE_3D) {
+		// No UV2 in canvas_item shaders.
 		mesh_format |= RS::ARRAY_FORMAT_TEX_UV2;
+	}
+	if (needs_custom0) {
+		mesh_format |= RS::ARRAY_FORMAT_CUSTOM0;
+		// In 2D, CUSTOM0 holds UV1 in .xy and RawUV0 in .zw when both are needed, otherwise only the needed one in .xy
+		if (needs_custom0_uv1 && needs_rawuv0) {
+			mesh_format |= RS::ARRAY_CUSTOM_RGBA_FLOAT << RS::ARRAY_FORMAT_CUSTOM0_SHIFT;
+		} else {
+			mesh_format |= RS::ARRAY_CUSTOM_RG_FLOAT << RS::ARRAY_FORMAT_CUSTOM0_SHIFT;
+		}
 	}
 
 	// -----------------------------------------
@@ -168,6 +217,15 @@ bool PKBatchDrawerBillboardCPU::AllocBuffers(SRenderContext &p_ctx) {
 
 		// Resize index, UV0/UV1, and vertex/normal/tangent arrays
 		idx_array.resize(idx_count_alloc * idx_stride);
+		if (_should_gen_input(Drawers::GenInput_UV0)) {
+			texcoords.Resize(vtx_count_alloc);
+		}
+		if (_should_gen_input(Drawers::GenInput_UV1)) {
+			texcoords2.Resize(vtx_count_alloc);
+		}
+		if (_should_gen_input(Drawers::GenInput_RawUV0)) {
+			rawtexcoords.Resize(vtx_count_alloc);
+		}
 		atb_array.resize(vtx_count_alloc * atb_stride);
 		vtx_array.resize(vtx_count_alloc * vnt_stride);
 
@@ -249,14 +307,13 @@ bool PKBatchDrawerBillboardCPU::MapBuffers(SRenderContext &p_ctx) {
 		m_BBJobs_Billboard.m_Exec_PNT.m_Tangents = tangents_view;
 	}
 	if (_should_gen_input(Drawers::GenInput_UV0)) {
-		void *texcoords_mapped = atb_array.ptrw();
-		TStridedMemoryView<CFloat2> texcoords_view(static_cast<CFloat2 *>(texcoords_mapped), vtx_count, atb_stride);
-		m_BBJobs_Billboard.m_Exec_Texcoords.m_Texcoords = texcoords_view;
+		m_BBJobs_Billboard.m_Exec_Texcoords.m_Texcoords = texcoords;
 	}
 	if (_should_gen_input(Drawers::GenInput_UV1)) {
-		void *texcoords2_mapped = atb_array.ptrw() + sizeof(CFloat2);
-		TStridedMemoryView<CFloat2> texcoords2_view(static_cast<CFloat2 *>(texcoords2_mapped), vtx_count, atb_stride);
-		m_BBJobs_Billboard.m_Exec_Texcoords.m_Texcoords2 = texcoords2_view;
+		m_BBJobs_Billboard.m_Exec_Texcoords.m_Texcoords2 = texcoords2;
+	}
+	if (_should_gen_input(Drawers::GenInput_RawUV0)) {
+		m_BBJobs_Billboard.m_Exec_Texcoords.m_RawTexcoords = rawtexcoords;
 	}
 
 	// -----------------------------------------
@@ -318,6 +375,25 @@ bool PKBatchDrawerBillboardCPU::MapBuffers(SRenderContext &p_ctx) {
 		m_BBJobs_Billboard.m_Exec_CopyField.m_FieldsToCopy = additional_inputs_mapped.View();
 		m_BBJobs_Billboard.m_Exec_CopyField.m_PerVertex = false;
 	}
+
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		for (auto request : m_DrawPass->m_DrawRequests) {
+			Drawers::SBillboard_DrawRequest *dr = static_cast<Drawers::SBillboard_DrawRequest *>(request);
+			Drawers::SBillboard_BillboardingRequest &bbRequest = dr->m_BB;
+			switch (bbRequest.m_Mode) {
+				case BillboardMode_AxisAligned:
+				case BillboardMode_AxisAlignedSpheroid:
+				case BillboardMode_AxisAlignedCapsule:
+					bbRequest.m_Flags.m_FlipU = !bbRequest.m_Flags.m_FlipU;
+					break;
+				case BillboardMode_ScreenAligned:
+				case BillboardMode_ViewposAligned:
+				case BillboardMode_PlaneAligned:
+					break;
+			}
+		}
+	}
+
 	return true;
 }
 
@@ -359,6 +435,62 @@ bool PKBatchDrawerBillboardCPU::UnmapBuffers(SRenderContext &p_ctx) {
 	// Clear unused indices at the end of the index buffer
 	idx_array.clear_slack_data(idx_count * idx_stride);
 
+	const bool needs_uv1 = _should_gen_input(Drawers::GenInput_UV1);
+	const bool needs_rawuv0 = _should_gen_input(Drawers::GenInput_RawUV0);
+
+	// Per-vertex attribute layout (Godot attribute stream order is TEX_UV, TEX_UV2, CUSTOM0):
+	// - 3D: UV0 (TEX_UV), [UV1 (TEX_UV2)], [RawUV0 (CUSTOM0.xy)]
+	// - 2D: UV0 (TEX_UV), [UV1 (CUSTOM0.xy)], [RawUV0 (CUSTOM0.zw if UV1, else CUSTOM0.xy)]
+	if (atb_stride > 0) {
+		CFloat2 *dest = reinterpret_cast<CFloat2 *>(atb_array.ptrw());
+		constexpr int float4_size = sizeof(SIMD::Float4);
+		const CFloat2 *uv0_data = texcoords.RawDataPointer();
+		const CFloat2 *uv1_data = texcoords2.RawDataPointer();
+		const CFloat2 *rawuv0_data = rawtexcoords.RawDataPointer();
+		const int vertices_left = vtx_count % 2;
+		const int global_offset = (vtx_count - vertices_left);
+
+		if (!needs_uv1 && !needs_rawuv0) {
+			// Only UV0 was requested, can raw copy the data.
+			memcpy(dest, uv0_data, vtx_count * atb_stride);
+		} else if (!needs_uv1 || !needs_rawuv0) {
+			// Two streams: UV0, UV1 or UV0, RawUV0
+			const CFloat2 *second_data = needs_rawuv0 ? rawuv0_data : uv1_data;
+			for (int i = 0; i < vtx_count / 2; ++i) {
+				const SIMD::Float4 uv0 = SIMD::Float4::LoadAligned16(uv0_data, i * float4_size); // a0 a1
+				const SIMD::Float4 second = SIMD::Float4::LoadAligned16(second_data, i * float4_size); // b0 b1
+				const SIMD::Float4 lo = SIMD::MoveLoHi(uv0, second); // a0 b0
+				const SIMD::Float4 hi = SIMD::MoveHiLo(second, uv0); // a1 b1
+				lo.StoreUnaligned(dest, 2 * i * float4_size);
+				hi.StoreUnaligned(dest, 2 * i * float4_size + float4_size);
+			}
+			for (int i = 0; i < vertices_left; ++i) {
+				const int offset = global_offset + i;
+				dest[offset * 2 + 0] = uv0_data[offset];
+				dest[offset * 2 + 1] = second_data[offset];
+			}
+		} else {
+			// Three streams: UV0, UV1, RawUV0
+			for (int i = 0; i < vtx_count / 2; ++i) {
+				const SIMD::Float4 uv0 = SIMD::Float4::LoadAligned16(uv0_data, i * float4_size); // a0 a1
+				const SIMD::Float4 uv1 = SIMD::Float4::LoadAligned16(uv1_data, i * float4_size); // b0 b1
+				const SIMD::Float4 rawuv0 = SIMD::Float4::LoadAligned16(rawuv0_data, i * float4_size); // c0 c1
+				const SIMD::Float4 out0 = SIMD::MoveLoHi(uv0, uv1); // a0 b0
+				const SIMD::Float4 out1 = SIMD::MoveLoHi(rawuv0, SIMD::MoveHiLo(uv0, uv0)); // c0 a1
+				const SIMD::Float4 out2 = SIMD::MoveHiLo(rawuv0, uv1); // b1 c1
+				out0.StoreUnaligned(dest, 3 * i * float4_size);
+				out1.StoreUnaligned(dest, 3 * i * float4_size + float4_size);
+				out2.StoreUnaligned(dest, 3 * i * float4_size + 2 * float4_size);
+			}
+			for (int i = 0; i < vertices_left; ++i) {
+				const int offset = global_offset + i;
+				dest[offset * 3 + 0] = uv0_data[offset];
+				dest[offset * 3 + 1] = uv1_data[offset];
+				dest[offset * 3 + 2] = rawuv0_data[offset];
+			}
+		}
+	}
+
 	sim_data.unmap();
 	return true;
 }
@@ -370,14 +502,30 @@ bool PKBatchDrawerBillboardCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawC
 
 	const PKRenderContext &render_context = static_cast<PKRenderContext &>(p_ctx);
 	const PKRendererCache *renderer_cache = static_cast<PKRendererCache *>(p_to_emit.m_RendererCaches.First().Get());
-	if (!PKGD_VERIFY(renderer_cache != null)) {
+	if (!PKGD_VERIFY(renderer_cache != nullptr)) {
 		return true;
 	}
 
 	RS *rs = RS::get_singleton();
-	const RID mesh_rid = mesh->get_rid();
 
-	const AABB mesh_bbox = to_gd(p_to_emit.m_BBox);
+	const RID mesh_rid = mesh->get_rid();
+	AABB mesh_bbox = to_gd(p_to_emit.m_BBox);
+	if (render_mode == PKRender::RENDER_MODE_2D) {
+		// Resize mesh bbox & convert position
+		const float unit_pixel_size = PKPlugin::get_singleton()->get_project_settings()->unit_pixel_size();
+		mesh_bbox = to_gd(p_to_emit.m_BBox * unit_pixel_size);
+		mesh_bbox.position.y = -mesh_bbox.position.y - mesh_bbox.size.y;
+
+		// Apply bbox as a custom rect directly
+		const RID canvas_item = owner_scene->get_or_create_canvas_item(mesh_rid).first;
+		rs->canvas_item_set_custom_rect(canvas_item, true, Rect2(Vector2(mesh_bbox.position.x, mesh_bbox.position.y), Vector2(mesh_bbox.size.x, mesh_bbox.size.y)));
+
+		// Compute z-index
+		int z_index = PKManager::get_singleton()->get_effect_z_index(renderer_cache->get_effect_path());
+		z_index += shader_mat->transparent_sort_override;
+		rs->canvas_item_set_z_index(canvas_item, z_index);
+	}
+
 	mesh->set_custom_aabb(mesh_bbox);
 
 	// Realloc surface if buffer sizes changed, otherwise update data
@@ -402,7 +550,7 @@ bool PKBatchDrawerBillboardCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawC
 				_should_gen_input(Drawers::GenInput_Normal) || (has_views && _should_gen_input(Drawers::GenInput_Normal, 0)) ||
 				_should_gen_input(Drawers::GenInput_Tangent) || (has_views && _should_gen_input(Drawers::GenInput_Tangent, 0));
 
-		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1);
+		const bool update_attributes = _should_gen_input(Drawers::GenInput_UV0) || _should_gen_input(Drawers::GenInput_UV1) || _should_gen_input(Drawers::GenInput_RawUV0);
 
 		if (update_indices) {
 			rs->mesh_surface_update_index_region(mesh_rid, 0, 0, idx_array);
@@ -426,9 +574,15 @@ bool PKBatchDrawerBillboardCPU::EmitDrawCall(SRenderContext &p_ctx, const SDrawC
 	}
 
 	// Request the rendering of our mesh
-	Pair<RID, bool> &instance = owner_scene->get_or_create_visual_instance(mesh->get_rid());
-	rs->instance_set_scenario(instance.first, render_context.scenario_id);
-	instance.second = true; // Tell scene that the instance was rendered this frame
+	if (render_mode == PKRender::RENDER_MODE_3D) {
+		Pair<RID, bool> &instance = owner_scene->get_or_create_visual_instance(mesh_rid);
+		rs->instance_set_scenario(instance.first, render_context.scenario_id);
+		instance.second = true; // Tell scene that the instance was rendered this frame
+	} else {
+		Pair<RID, bool> &canvas_item = owner_scene->get_or_create_canvas_item(mesh_rid);
+		rs->canvas_item_set_parent(canvas_item.first, render_context.canvas_id);
+		canvas_item.second = true; // Tell scene that the canvas item was rendered this frame
+	}
 
 #ifdef PK_DEBUG_AABB
 	aabb_debug.update(mesh_bbox);
@@ -456,6 +610,10 @@ String PKBatchDrawerBillboardCPU::_get_additional_stream_offset_name(AdditionalS
 			return "uv_rotations";
 		case STREAM_OFFSET_TRANSFORM_UVS_SCALES:
 			return "uv_scales";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1:
+			return "alpha_mask_1_animation_cursor";
+		case STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2:
+			return "alpha_mask_2_animation_cursor";
 		default:
 			return "";
 	}
@@ -475,8 +633,8 @@ bool PKBatchDrawerBillboardCPU::_should_gen_input(Drawers::EGeneratedInput p_inp
 bool PKBatchDrawerBillboardCPU::_is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type) const {
 	if (p_input_type == BaseType_Float4) {
 		if (p_input_name == BasicRendererProperties::SID_Diffuse_Color() || // Legacy
-			p_input_name == BasicRendererProperties::SID_Diffuse_DiffuseColor() ||
-			p_input_name == BasicRendererProperties::SID_Distortion_Color()) {
+				p_input_name == BasicRendererProperties::SID_Diffuse_DiffuseColor() ||
+				p_input_name == BasicRendererProperties::SID_Distortion_Color()) {
 			r_stream_offset_type = STREAM_OFFSET_COLORS;
 		} else if (p_input_name == BasicRendererProperties::SID_Emissive_EmissiveColor()) {
 			r_stream_offset_type = STREAM_OFFSET_EMISSIVE_COLORS4;
@@ -493,12 +651,16 @@ bool PKBatchDrawerBillboardCPU::_is_additional_input_supported(const CStringId &
 		}
 	} else if (p_input_type == BaseType_Float) {
 		if (p_input_name == BasicRendererProperties::SID_AlphaRemap_Cursor() ||
-			p_input_name == BasicRendererProperties::SID_AlphaRemap_AlphaRemapCursor()) {
+				p_input_name == BasicRendererProperties::SID_AlphaRemap_AlphaRemapCursor()) {
 			r_stream_offset_type = STREAM_OFFSET_ALPHA_CURSORS;
 		} else if (p_input_name == BasicRendererProperties::SID_Atlas_TextureID()) {
 			r_stream_offset_type = STREAM_OFFSET_ATLAS_TEXTURE_IDS;
 		} else if (p_input_name == BasicRendererProperties::SID_TransformUVs_UVRotate()) {
 			r_stream_offset_type = STREAM_OFFSET_TRANSFORM_UVS_ROTATES;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask1AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1;
+		} else if (p_input_name == BasicRendererProperties::SID_AlphaMasks_Mask2AnimationCursor()) {
+			r_stream_offset_type = STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2;
 		}
 	}
 	return r_stream_offset_type != STREAM_OFFSET_MAX;

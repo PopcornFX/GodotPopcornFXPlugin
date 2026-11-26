@@ -8,6 +8,7 @@
 #include "godot_cpp/classes/shader_material.hpp"
 #include "godot_cpp/classes/texture2d.hpp"
 
+#include "integration/engine/render/pk_render.h"
 #include "integration/pk_sdk.h"
 
 #include <pk_particles/include/Renderers/ps_renderer_enums.h>
@@ -56,9 +57,15 @@ public:
 		SKELETAL_ANIM = (1 << 22),
 		SKELETAL_INTERPOL = (1 << 23),
 		SKELETAL_TRACK_INTERPOL = (1 << 24),
-		BILLBOARD_CAPSULE = (1 << 25),
-		MAX = 26
+		BILLBOARD_PLANE_ALIGNED = (1 << 25),
+		BILLBOARD_AXIS_ALIGNED = (1 << 26),
+		BILLBOARD_CAPSULE = (1 << 27),
+		USE_VERTEX_COLOR = (1 << 28),
+		MAX = 29
 	};
+
+	// Returns the name of the given renderer class
+	static String get_renderer_class_name(ERendererClass p_renderer_class);
 
 	// Returns the name of the given shader blend mode
 	static String get_blend_mode_name(BlendMode p_mode);
@@ -85,8 +92,21 @@ public:
 	float mv_distortion_strength_columns = 1;
 	float mv_distortion_strength_rows = 1;
 
+	float alpha_mask_1_intensity = 1;
+	float alpha_mask_1_weight = 1;
+	Vector2 alpha_mask_1_scale;
+	float alpha_mask_1_rotation_speed = 0;
+	Vector2 alpha_mask_1_translation_speed;
+
+	float alpha_mask_2_intensity = 1;
+	float alpha_mask_2_weight = 1;
+	Vector2 alpha_mask_2_scale;
+	float alpha_mask_2_rotation_speed = 0;
+	Vector2 alpha_mask_2_translation_speed;
+
 	float softness_distance = 0;
-	bool transform_uvs_rgb_only = false;
+	bool transform_uv_rgb_only = false;
+	Vector2 transform_uv_rotation_center;
 	bool cast_shadows = false;
 
 	Ref<Texture2D> tex_diffuse;
@@ -97,11 +117,13 @@ public:
 	Ref<Texture2D> tex_rough_metal;
 	Ref<Texture2D> tex_specular;
 	Ref<Texture2D> tex_alpha_remap;
+	Ref<Texture2D> tex_alpha_mask_1_map;
+	Ref<Texture2D> tex_alpha_mask_2_map;
 	Ref<Texture2D> tex_motion_vectors;
 
 	Ref<Mesh> mesh;
 
-	void init_from_renderer(const CRendererDataBase &p_renderer);
+	void init_from_renderer(const CRendererDataBase &p_renderer, PKRender::RenderMode p_render_mode);
 	void create_material_instance();
 	void apply_to_visual_instance(RID p_instance) const;
 	void bind_material_properties(const PKRendererCache *p_renderer_cache) const;
@@ -118,4 +140,6 @@ public:
 
 private:
 	String _get_shader_path() const;
+
+	PKRender::RenderMode render_mode = PKRender::RENDER_MODE_3D;
 };

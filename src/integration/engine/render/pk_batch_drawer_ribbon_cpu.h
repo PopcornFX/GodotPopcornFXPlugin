@@ -5,6 +5,7 @@
 #pragma once
 
 #include "godot_cpp/classes/array_mesh.hpp"
+#include "pk_render.h"
 
 #include "core/pk_buffer.h"
 #include "core/pk_packed_byte_array.h"
@@ -24,7 +25,7 @@ class PKBatchDrawerRibbonCPU : public CRendererBatchJobs_Ribbon_CPUBB {
 public:
 	typedef CRendererBatchJobs_Ribbon_CPUBB Super;
 
-	PKBatchDrawerRibbonCPU() = default;
+	PKBatchDrawerRibbonCPU(PKRender::RenderMode p_render_mode) : render_mode(p_render_mode) {}
 	~PKBatchDrawerRibbonCPU() = default;
 
 	virtual bool Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) override;
@@ -48,6 +49,8 @@ private:
 		STREAM_OFFSET_TRANSFORM_UVS_OFFSETS,
 		STREAM_OFFSET_TRANSFORM_UVS_ROTATES,
 		STREAM_OFFSET_TRANSFORM_UVS_SCALES,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2,
 		STREAM_OFFSET_MAX
 	};
 
@@ -59,6 +62,8 @@ private:
 
 	static bool _is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type);
 	void _clear_stream_offsets();
+
+	PKRender::RenderMode render_mode;
 
 	const uint32_t mesh_buffers_padding = 1024;
 

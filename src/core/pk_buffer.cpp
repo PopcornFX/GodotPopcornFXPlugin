@@ -4,36 +4,27 @@
 //----------------------------------------------------------------------------
 #include "pk_buffer.h"
 
+#include "godot_cpp/classes/image.hpp"
 #include "godot_cpp/classes/rendering_server.hpp"
 
 #include "integration/pk_error_handling.h"
 
 using RS = RenderingServer;
-using RD = RenderingDevice;
 
 void PKBuffer::init() {
-	srv.instantiate();
-	view.instantiate();
-	format.instantiate();
-	format->set_format(RD::DATA_FORMAT_R32_SFLOAT);
-	format->set_usage_bits(RD::TEXTURE_USAGE_CAN_UPDATE_BIT | RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT);
-	format->set_width(0);
-	format->set_height(0);
-	format->set_depth(1);
-	format->set_mipmaps(1);
+	size = 0;
+	initialized = true;
 }
 
 void PKBuffer::destroy() {
 	PKGD_ASSERT_MSG(mapping_counter == 0, "Destroying buffer while it is still mapped!");
 
-	if (srv.is_valid()) {
-		srv->set_texture_rd_rid(RID());
-	}
-
 	if (tex.is_valid()) {
-		RD *rd = RS::get_singleton()->get_rendering_device();
-		rd->free_rid(tex);
+		RS::get_singleton()->free_rid(tex);
+		tex = RID();
 	}
+	size = 0;
+	initialized = false;
 }
 
 void PKBuffer::resize(uint32_t p_size_in_bytes) {
@@ -45,21 +36,17 @@ void PKBuffer::resize(uint32_t p_size_in_bytes) {
 	const uint32_t pixel_count = p_size_in_bytes / sizeof(float);
 	const uint32_t tex_dimensions = IntegerTools::NextOrEqualPowerOfTwo((uint32_t)PKFloatToIntCeil(sqrtf((float)pixel_count)));
 
-	// Update texture format dimensions and reallocate the texture
-	if (tex_dimensions != format->get_width()) {
-		format->set_width(tex_dimensions);
-		format->set_height(tex_dimensions);
+	if (tex_dimensions == size || tex_dimensions == 0) {
+		return;
+	}
+	size = tex_dimensions;
 
-		RD *rd = RS::get_singleton()->get_rendering_device();
-
-		// Allocate a new low-level texture and link it to the high-level wrapper object
-		const RID new_tex = rd->texture_create(format, view);
-		srv->set_texture_rd_rid(new_tex);
-
-		// Free the old texture RID now that it isn't referenced in the wrapper anymore
-		if (tex.is_valid()) {
-			rd->free_rid(tex);
-		}
+	RS *rs = RS::get_singleton();
+	const Ref<Image> image = Image::create_empty(size, size, false, Image::FORMAT_RF);
+	const RID new_tex = rs->texture_2d_create(image);
+	if (tex.is_valid()) {
+		rs->texture_replace(tex, new_tex);
+	} else {
 		tex = new_tex;
 	}
 }
@@ -78,20 +65,19 @@ void PKBuffer::unmap() {
 	}
 
 	_resize_data();
-	RD *rd = RS::get_singleton()->get_rendering_device();
-	rd->texture_update(srv->get_texture_rd_rid(), 0, data);
+	const Ref<Image> image = Image::create_from_data(size, size, false, Image::FORMAT_RF, data);
+	RS::get_singleton()->texture_2d_update(tex, image, 0);
 }
 
 uint32_t PKBuffer::capacity_in_bytes() const {
-	const uint32_t tex_dimensions = format->get_width();
-	return tex_dimensions * tex_dimensions * sizeof(float);
+	return size * size * sizeof(float);
 }
 
-Ref<Texture2DRD> PKBuffer::get_srv() const {
+RID PKBuffer::get_srv() const {
 	if (!PKGD_VERIFY_MSG(is_valid(), "Shouldn't use buffer SRV if it hasn't been init and resized!")) {
-		return nullptr;
+		return RID();
 	}
-	return srv;
+	return tex;
 }
 
 void PKBuffer::_resize_data() {

@@ -35,3 +35,5 @@ ios.release = {
 
 [icons]
 PKEmitter3D = "res://addons/popcornfx/icons/PKEmitter3D.svg"
+PKEmitter2D = "res://addons/popcornfx/icons/PKEmitter2D.svg"
+PKEmitterControl = "res://addons/popcornfx/icons/PKEmitterControl.svg"

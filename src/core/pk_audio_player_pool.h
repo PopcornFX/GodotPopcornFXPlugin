@@ -25,7 +25,7 @@ public:
 		resize(p_size);
 	}
 
-	~PKAudioPlayerPool() {
+	virtual ~PKAudioPlayerPool() {
 		// release everything
 		for (KeyValue<Vector2i, PKActiveSourceInfo> &entry : active_sources) {
 			release_source(entry.key);

@@ -106,7 +106,7 @@ void PKAttributeSamplerCurve::set_edit_as_gradient(bool p_edit_as_gradient) {
 				const Vector2 pos = curve->get_point_position(j);
 				gradient_offsets[j] = pos.x;
 				gradient_colors[j] = Color();
-				gradient_colors[j].components[i] = CLAMP(pos.y, 0.f, 1.f);
+				gradient_colors[j][i] = CLAMP(pos.y, 0.f, 1.f);
 			}
 		}
 	}
@@ -326,15 +326,15 @@ void PKAttributeSamplerCurve::_update_from_gradient() {
 		for (int i = 0; i < gradient->get_point_count(); ++i) {
 			const float offset = gradient->get_offset(i);
 			const Color color = gradient->get_color(i);
-			x->add_point(Vector2(offset, color.components[0]));
+			x->add_point(Vector2(offset, color[0]));
 			if (order > 1) {
-				y->add_point(Vector2(offset, color.components[1]));
+				y->add_point(Vector2(offset, color[1]));
 			}
 			if (order > 2) {
-				z->add_point(Vector2(offset, color.components[2]));
+				z->add_point(Vector2(offset, color[2]));
 			}
 			if (order > 3) {
-				w->add_point(Vector2(offset, color.components[3]));
+				w->add_point(Vector2(offset, color[3]));
 			}
 		}
 	}

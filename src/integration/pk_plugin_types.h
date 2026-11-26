@@ -151,6 +151,19 @@ _FORCE_INLINE_ String godot_image_format_to_string(const Image::Format &p_format
 	}
 }
 
+// Helper function to turn a 2D transform into a popcorn transform.
+_FORCE_INLINE_ CFloat4x4 to_pk(Transform2D p_transform) {
+	Vector2 &x_axis = p_transform.columns[0];
+	Vector2 &y_axis = p_transform.columns[1];
+	Vector2 &origin = p_transform.columns[2];
+
+	return CFloat4x4(
+			CFloat4(x_axis.x, x_axis.y, 0.0, 0.0),
+			CFloat4(y_axis.x, y_axis.y, 0.0, 0.0),
+			CFloat4(0.0, 0.0, 1.0, 0.0),
+			CFloat4(origin.x, -origin.y, 0.0, 1));
+}
+
 _FORCE_INLINE_ CFloat4x4 to_pk(const Transform3D &p_transform) {
 	CFloat4x4 out;
 	const Basis basis = p_transform.get_basis();
@@ -162,6 +175,14 @@ _FORCE_INLINE_ CFloat4x4 to_pk(const Transform3D &p_transform) {
 	out.Axis(3) = CFloat4(origin[0], origin[1], origin[2], 1);
 
 	return out;
+}
+
+_FORCE_INLINE_ Transform3D to_gd(const CFloat4x4 &p_transform) {
+	const CFloat4 &x = p_transform.XAxis();
+	const CFloat4 &y = p_transform.YAxis();
+	const CFloat4 &z = p_transform.ZAxis();
+	const CFloat4 &w = p_transform.WAxis();
+	return Transform3D(x.x(), x.y(), x.z(), y.x(), y.y(), y.z(), z.x(), z.y(), z.z(), w.x(), w.y(), w.z());
 }
 
 _FORCE_INLINE_ CFloat4x4 to_pk(const Projection &p_projection) {
@@ -182,8 +203,14 @@ _FORCE_INLINE_ String to_gd(const CString &p_str) {
 _FORCE_INLINE_ String to_gd(const CStringLocalized &p_str) {
 	return String(p_str.MapENG().ToUTF8().Data());
 }
+_FORCE_INLINE_ StringName to_gd(const CStringId &p_str) {
+	return StringName(p_str.ToStringData());
+}
 _FORCE_INLINE_ CString to_pk(const String &p_str) {
 	return CString(p_str.utf8().ptr());
+}
+_FORCE_INLINE_ CStringId to_pk(const StringName &p_str) {
+	return CStringId(to_pk(String(p_str)).Data());
 }
 
 // This is allocated before PopcornFX startup. Do not use PopcornFX types
@@ -193,4 +220,5 @@ struct SPopcornFXProjectSettings {
 	bool debug_baked_effects;
 #endif
 	String source_pack_root;
+	float unit_pixel_size;
 };

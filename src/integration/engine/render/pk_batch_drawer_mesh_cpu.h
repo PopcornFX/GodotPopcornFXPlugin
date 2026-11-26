@@ -5,12 +5,16 @@
 #pragma once
 
 #include "godot_cpp/classes/multi_mesh.hpp"
+#include "godot_cpp/classes/rendering_device.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
+#include "godot_cpp/variant/packed_float32_array.hpp"
 #include "godot_cpp/variant/rid.hpp"
 
 #include "core/pk_buffer.h"
 #include "core/pk_shader_material.h"
 #include "integration/engine/render/pk_render_type_policies.h"
 #include "integration/engine/render/pk_render_utils.h"
+#include "pk_render.h"
 
 #include <pk_render_helpers/include/batch_jobs/rh_batch_jobs_mesh_cpu.h>
 
@@ -22,7 +26,7 @@ class PKBatchDrawerMeshCPU : public CRendererBatchJobs_Mesh_CPUBB {
 public:
 	typedef CRendererBatchJobs_Mesh_CPUBB Super;
 
-	PKBatchDrawerMeshCPU() = default;
+	PKBatchDrawerMeshCPU(PKRender::RenderMode p_render_mode) : render_mode(p_render_mode) {}
 	~PKBatchDrawerMeshCPU() = default;
 
 	virtual bool Setup(const CRendererDataBase *p_renderer, const CParticleRenderMedium *p_owner, const CFrameCollector *p_fc, const CStringId &p_storage_class) override;
@@ -44,6 +48,8 @@ private:
 		STREAM_OFFSET_TRANSFORM_UVS_OFFSETS,
 		STREAM_OFFSET_TRANSFORM_UVS_ROTATES,
 		STREAM_OFFSET_TRANSFORM_UVS_SCALES,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR1,
+		STREAM_OFFSET_ALPHA_MASKS_ANIMATION_CURSOR2,
 		STREAM_OFFSET_MAX
 	};
 
@@ -52,6 +58,8 @@ private:
 
 	static bool _is_additional_input_supported(const CStringId &p_input_name, EBaseTypeID p_input_type, AdditionalStreamOffsets &r_stream_offset_type);
 	void _clear_stream_offsets();
+
+	PKRender::RenderMode render_mode;
 
 	uint32_t particle_count = 0; // Total number of billboarded particles
 
@@ -63,8 +71,10 @@ private:
 	PKRenderDebugAABB aabb_debug;
 #endif
 
-	TArray<CFloat4x4, TArrayAligned16> instanced_matrices;
-	PackedByteArray instanced_transforms;
+	TArray<CFloat4x4, TArrayStaticController<32>> instanced_matrices;
+	RenderingDevice *rd = nullptr;
+	PackedByteArray instanced_transforms_rd;
+	PackedFloat32Array instanced_transforms_compat;
 
 	PKBuffer sim_data;
 	TArray<PKAdditionalInput> additional_inputs;

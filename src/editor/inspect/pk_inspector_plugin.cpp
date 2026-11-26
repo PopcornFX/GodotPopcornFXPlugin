@@ -7,11 +7,15 @@
 #include "godot_cpp/classes/editor_inspector.hpp"
 
 #include "pk_editor_property_bool_array.h"
+#include "scene/pk_emitter_2d.h"
 #include "scene/pk_emitter_3d.h"
+#include "scene/pk_emitter_control.h"
 
 namespace godot {
 bool PKInspectorPlugin::_can_handle(Object *p_object) const {
-	return p_object->is_class(PKEmitter3D::get_class_static());
+	return p_object->is_class(PKEmitter3D::get_class_static()) ||
+			p_object->is_class(PKEmitter2D::get_class_static()) ||
+			p_object->is_class(PKEmitterControl::get_class_static());
 }
 
 bool PKInspectorPlugin::_parse_property(Object *p_object, Variant::Type p_type, const String &p_name, PropertyHint p_hint_type, const String &p_hint_string, BitField<PropertyUsageFlags> p_usage_flags, bool p_wide) {
